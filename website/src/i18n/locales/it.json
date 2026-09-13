@@ -15158,7 +15158,26 @@
       "role_update_apply_blocked_other": "Scegli Mantieni il mio o Prendi quello del modello per ciascuno dei {{count}} campi cambiati su entrambi i lati.",
       "role_update_apply_blocked_many": "Scegli Mantieni il mio o Prendi quello del modello per ciascuno dei {{count}} campi cambiati su entrambi i lati.",
       "detach_failed": "Impossibile scollegare il membro.",
-      "role_update_member_moved": "Questo membro è stato modificato da quando è stato fatto questo piano. Rivedilo."
+      "role_update_member_moved": "Questo membro è stato modificato da quando è stato fatto questo piano. Rivedilo.",
+      "fire": "Licenzia {{name}}",
+      "fire_explain": "Licenziare ritira questo membro dell’equipaggio: lascia il tuo equipaggio e la sua definizione di agente viene rimossa; conversazione, attività e note vengono archiviate, non eliminate. Nulla viene rimosso finché non confermi.",
+      "fire_confirm_explain": "Licenziare «{{name}}»? Questo membro lascia il tuo equipaggio: il membro e la sua definizione di agente vengono rimossi e la sua memoria viene archiviata. Conversazione, attività, briefing e regole vengono archiviati, non eliminati: potrai ritrovarli in seguito.",
+      "fire_confirm_explain_purge": "Licenziare «{{name}}» ed eliminare tutto? Questo membro lascia il tuo equipaggio: il membro e la sua definizione di agente vengono rimossi e la sua memoria viene archiviata. Conversazione, attività, briefing e regole vengono ELIMINATI, non archiviati. L’operazione non può essere annullata.",
+      "fire_purge_label": "Elimina anche thread, attività, briefing e regole. Non si può annullare.",
+      "fire_confirm": "Sì, licenzia",
+      "fire_confirm_purge": "Sì, licenzia ed elimina",
+      "firing": "Licenziamento…",
+      "fire_failed": "Impossibile licenziare il membro.",
+      "fired_summary": "{{name}} è stato licenziato.",
+      "fired_thread_archived": "Thread, attività e note sono archiviati; il thread si apre ancora dalla <history/> nella pagina Chat.",
+      "fired_thread_purged": "Thread, attività e note sono stati eliminati.",
+      "fired_thread_kept": "Attività e note sono state eliminate, ma il thread no; resta nella <history/>.",
+      "fired_thread_kept_cron_claim": "Attività e note sono state eliminate, ma il thread no: non è stato possibile leggere la rivendicazione di un job pianificato su di esso. Resta nella <history/>.",
+      "fired_thread_kept_store": "Attività e note sono state eliminate, ma il thread no: non è stato possibile leggere l’archivio delle pianificazioni. Resta nella <history/>.",
+      "fired_history_link": "Cronologia",
+      "fired_thread_none": "Nessun thread; attività e note sono archiviate.",
+      "fired_dismiss": "Chiudi",
+      "fired_thread_none_purged": "Nessun thread; attività e note sono state eliminate."
     }
   },
   "privacyDisclosure": {

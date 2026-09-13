@@ -15159,7 +15159,26 @@
       "role_update_apply_blocked_other": "Choisissez Garder le mien ou Prendre celui du modèle pour chacun des {{count}} champs modifiés des deux côtés.",
       "role_update_apply_blocked_many": "Choisissez Garder le mien ou Prendre celui du modèle pour chacun des {{count}} champs modifiés des deux côtés.",
       "detach_failed": "Le membre n’a pas pu être détaché.",
-      "role_update_member_moved": "Ce membre a été modifié depuis ce plan. Examinez-le à nouveau."
+      "role_update_member_moved": "Ce membre a été modifié depuis ce plan. Examinez-le à nouveau.",
+      "fire": "Licencier {{name}}",
+      "fire_explain": "Renvoyer retire ce coéquipier : il quitte ton équipage et sa propre définition d’agent disparaît ; sa discussion, son activité et ses notes sont archivées, pas supprimées. Rien n’est supprimé avant ta confirmation.",
+      "fire_confirm_explain": "Renvoyer « {{name}} » ? Ce coéquipier quitte ton équipage : le coéquipier et sa propre définition d’agent sont retirés, et sa mémoire est archivée. Sa discussion, son activité, son briefing et ses règles sont archivés, pas supprimés — tu pourras les retrouver plus tard.",
+      "fire_confirm_explain_purge": "Renvoyer « {{name}} » et tout supprimer ? Ce coéquipier quitte ton équipage : le coéquipier et sa propre définition d’agent sont retirés, et sa mémoire est archivée. Sa discussion, son activité, son briefing et ses règles sont SUPPRIMÉS, pas archivés. Cette action est irréversible.",
+      "fire_purge_label": "Supprimer aussi le fil, l’activité, le briefing et les règles. Irréversible.",
+      "fire_confirm": "Oui, licencier",
+      "fire_confirm_purge": "Oui, licencier et supprimer",
+      "firing": "Licenciement…",
+      "fire_failed": "Le membre n’a pas pu être licencié.",
+      "fired_summary": "{{name}} a été licencié.",
+      "fired_thread_archived": "Son fil, son activité et ses notes sont archivés ; le fil s’ouvre toujours depuis l’<history/> de la page Chat.",
+      "fired_thread_purged": "Son fil, son activité et ses notes ont été supprimés.",
+      "fired_thread_kept": "Son activité et ses notes ont été supprimées, mais le fil n’a pas pu l’être ; il reste dans l’<history/>.",
+      "fired_thread_kept_cron_claim": "Son activité et ses notes ont été supprimées, mais le fil n’a pas pu l’être : la revendication d’une tâche planifiée sur ce fil n’a pas pu être lue. Il reste dans l’<history/>.",
+      "fired_thread_kept_store": "Son activité et ses notes ont été supprimées, mais le fil n’a pas pu l’être : le magasin des planifications n’a pas pu être lu. Il reste dans l’<history/>.",
+      "fired_history_link": "Historique",
+      "fired_thread_none": "Aucun fil ; son activité et ses notes sont archivées.",
+      "fired_dismiss": "Fermer",
+      "fired_thread_none_purged": "Aucun fil ; son activité et ses notes ont été supprimées."
     }
   },
   "privacyDisclosure": {

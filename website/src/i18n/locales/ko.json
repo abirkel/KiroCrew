@@ -14760,7 +14760,26 @@
       "detach_cost": "모두 유지하고 {{app}} 추종을 중단합니다. 되돌릴 수 없습니다.",
       "role_update_apply_blocked_other": "양쪽에서 변경된 {{count}}개 필드마다 내 것 유지 또는 템플릿 것 사용을 선택하세요.",
       "detach_failed": "멤버를 분리할 수 없습니다.",
-      "role_update_member_moved": "이 계획을 만든 뒤 이 멤버가 편집되었습니다. 다시 검토하세요."
+      "role_update_member_moved": "이 계획을 만든 뒤 이 멤버가 편집되었습니다. 다시 검토하세요.",
+      "fire": "{{name}} 해고",
+      "fire_explain": "해고하면 이 크루메이트는 은퇴합니다. 크루에서 빠지고 전용 에이전트 정의가 제거되며, 대화·활동·메모는 삭제되지 않고 보관됩니다. 확인하기 전까지는 아무것도 제거되지 않습니다.",
+      "fire_confirm_explain": "‘{{name}}’을(를) 해고하시겠습니까? 이 크루메이트는 크루에서 빠집니다. 크루메이트와 전용 에이전트 정의가 제거되고 메모리는 보관됩니다. 대화, 활동, 브리핑, 규칙은 삭제되지 않고 보관되어 나중에 찾을 수 있습니다.",
+      "fire_confirm_explain_purge": "‘{{name}}’을(를) 해고하고 모두 삭제하시겠습니까? 이 크루메이트는 크루에서 빠집니다. 크루메이트와 전용 에이전트 정의가 제거되고 메모리는 보관됩니다. 대화, 활동, 브리핑, 규칙은 보관되지 않고 삭제됩니다. 이 작업은 되돌릴 수 없습니다.",
+      "fire_purge_label": "스레드, 활동, 브리핑, 규칙도 삭제합니다. 되돌릴 수 없습니다.",
+      "fire_confirm": "예, 해고",
+      "fire_confirm_purge": "예, 해고하고 삭제",
+      "firing": "해고 중…",
+      "fire_failed": "멤버를 해고할 수 없습니다.",
+      "fired_summary": "{{name}}이(가) 해고되었습니다.",
+      "fired_thread_archived": "스레드, 활동, 메모가 보관되었습니다. 스레드는 채팅 페이지의 <history/>에서 계속 열 수 있습니다.",
+      "fired_thread_purged": "스레드, 활동, 메모가 삭제되었습니다.",
+      "fired_thread_kept": "활동과 메모는 삭제되었지만 스레드는 삭제할 수 없었습니다. <history/>에 남아 있습니다.",
+      "fired_thread_kept_cron_claim": "활동과 메모는 삭제되었지만 스레드는 삭제할 수 없었습니다: 예약된 작업의 소유 정보를 읽을 수 없었습니다. <history/>에 남아 있습니다.",
+      "fired_thread_kept_store": "활동과 메모는 삭제되었지만 스레드는 삭제할 수 없었습니다: 예약 저장소를 읽을 수 없었습니다. <history/>에 남아 있습니다.",
+      "fired_history_link": "기록",
+      "fired_thread_none": "스레드가 없었습니다. 활동과 메모는 보관되었습니다.",
+      "fired_dismiss": "닫기",
+      "fired_thread_none_purged": "스레드가 없었습니다. 활동과 메모는 삭제되었습니다."
     }
   },
   "privacyDisclosure": {

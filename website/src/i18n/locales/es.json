@@ -15159,7 +15159,26 @@
       "role_update_apply_blocked_other": "Elige Conservar el mío o Tomar el de la plantilla para cada uno de los {{count}} campos que cambiaron en ambos lados.",
       "role_update_apply_blocked_many": "Elige Conservar el mío o Tomar el de la plantilla para cada uno de los {{count}} campos que cambiaron en ambos lados.",
       "detach_failed": "No se pudo desvincular al miembro.",
-      "role_update_member_moved": "Este miembro se editó desde que se hizo este plan. Revísalo de nuevo."
+      "role_update_member_moved": "Este miembro se editó desde que se hizo este plan. Revísalo de nuevo.",
+      "fire": "Despedir a {{name}}",
+      "fire_explain": "Despedir retira a este tripulante: deja tu tripulación y su propia definición de agente desaparece; su conversación, actividad y notas se archivan, no se eliminan. No se elimina nada hasta que confirmes.",
+      "fire_confirm_explain": "¿Despedir a “{{name}}”? Este tripulante deja tu tripulación: el tripulante y su propia definición de agente se eliminan y su memoria se archiva. Su conversación, actividad, briefing y reglas se archivan, no se eliminan; podrás encontrarlos más tarde.",
+      "fire_confirm_explain_purge": "¿Despedir a “{{name}}” y eliminar todo? Este tripulante deja tu tripulación: el tripulante y su propia definición de agente se eliminan y su memoria se archiva. Su conversación, actividad, briefing y reglas se ELIMINAN, no se archivan. Esto no se puede deshacer.",
+      "fire_purge_label": "Borrar también el hilo, la actividad, el briefing y las reglas. No se puede deshacer.",
+      "fire_confirm": "Sí, despedir",
+      "fire_confirm_purge": "Sí, despedir y borrar",
+      "firing": "Despidiendo…",
+      "fire_failed": "No se pudo despedir al miembro.",
+      "fired_summary": "{{name}} ha sido despedido.",
+      "fired_thread_archived": "Su hilo, actividad y notas están archivados; el hilo sigue abriéndose desde <history/> en la página de Chat.",
+      "fired_thread_purged": "Su hilo, actividad y notas se borraron.",
+      "fired_thread_kept": "Su actividad y notas se eliminaron, pero el hilo no pudo eliminarse; permanece en <history/>.",
+      "fired_thread_kept_cron_claim": "Su actividad y notas se eliminaron, pero el hilo no pudo eliminarse: no se pudo leer la reclamación de un trabajo programado sobre él. Permanece en <history/>.",
+      "fired_thread_kept_store": "Su actividad y notas se eliminaron, pero el hilo no pudo eliminarse: no se pudo leer el almacén de programaciones. Permanece en <history/>.",
+      "fired_history_link": "Historial",
+      "fired_thread_none": "No tenía hilo; su actividad y notas están archivadas.",
+      "fired_dismiss": "Descartar",
+      "fired_thread_none_purged": "No tenía hilo; su actividad y notas se eliminaron."
     }
   },
   "privacyDisclosure": {

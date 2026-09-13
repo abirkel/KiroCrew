@@ -15158,7 +15158,26 @@
       "role_update_apply_blocked_other": "Escolha Manter o meu ou Usar o do modelo para cada um dos {{count}} campos alterados em ambos os lados.",
       "role_update_apply_blocked_many": "Escolha Manter o meu ou Usar o do modelo para cada um dos {{count}} campos alterados em ambos os lados.",
       "detach_failed": "Não foi possível desvincular o membro.",
-      "role_update_member_moved": "Este membro foi editado desde que este plano foi feito. Revise-o de novo."
+      "role_update_member_moved": "Este membro foi editado desde que este plano foi feito. Revise-o de novo.",
+      "fire": "Demitir {{name}}",
+      "fire_explain": "Demitir aposenta este tripulante: ele sai da sua tripulação e sua própria definição de agente é removida; a conversa, a atividade e as notas são arquivadas, não excluídas. Nada é removido até você confirmar.",
+      "fire_confirm_explain": "Demitir “{{name}}”? Este tripulante sai da sua tripulação: o tripulante e sua própria definição de agente são removidos e sua memória é arquivada. Conversa, atividade, briefing e regras são arquivados, não excluídos — você pode encontrá-los depois.",
+      "fire_confirm_explain_purge": "Demitir “{{name}}” e excluir tudo? Este tripulante sai da sua tripulação: o tripulante e sua própria definição de agente são removidos e sua memória é arquivada. Conversa, atividade, briefing e regras são EXCLUÍDOS, não arquivados. Isso não pode ser desfeito.",
+      "fire_purge_label": "Apagar também o thread, a atividade, o briefing e as regras. Não pode ser desfeito.",
+      "fire_confirm": "Sim, demitir",
+      "fire_confirm_purge": "Sim, demitir e apagar",
+      "firing": "Demitindo…",
+      "fire_failed": "Não foi possível demitir o membro.",
+      "fired_summary": "{{name}} foi demitido.",
+      "fired_thread_archived": "O thread, a atividade e as notas estão arquivados; o thread ainda abre a partir do <history/> na página Chat.",
+      "fired_thread_purged": "Thread, atividade e notas foram apagados.",
+      "fired_thread_kept": "A atividade e as notas foram excluídas, mas o thread não pôde ser; ele permanece no <history/>.",
+      "fired_thread_kept_cron_claim": "A atividade e as notas foram excluídas, mas o thread não pôde ser: a reivindicação de um job agendado sobre ele não pôde ser lida. Ele permanece no <history/>.",
+      "fired_thread_kept_store": "A atividade e as notas foram excluídas, mas o thread não pôde ser: o repositório de agendamentos não pôde ser lido. Ele permanece no <history/>.",
+      "fired_history_link": "Histórico",
+      "fired_thread_none": "Não havia thread; a atividade e as notas estão arquivadas.",
+      "fired_dismiss": "Dispensar",
+      "fired_thread_none_purged": "Não havia thread; a atividade e as notas foram excluídas."
     }
   },
   "privacyDisclosure": {

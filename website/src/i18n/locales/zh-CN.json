@@ -14760,7 +14760,26 @@
       "detach_cost": "保留一切；不再跟随 {{app}}。无法撤销。",
       "role_update_apply_blocked_other": "双方都已更改 {{count}} 个字段，请逐个选择“保留我的”或“采用模板”。",
       "detach_failed": "无法分离该成员。",
-      "role_update_member_moved": "自制定此计划以来该成员已被编辑，请重新查看。"
+      "role_update_member_moved": "自制定此计划以来该成员已被编辑，请重新查看。",
+      "fire": "解雇 {{name}}",
+      "fire_explain": "解雇会让这位队友退役：它离开你的团队，其专属智能体定义会被移除；对话、活动和笔记会被归档，而不是删除。在你确认之前不会移除任何内容。",
+      "fire_confirm_explain": "解雇“{{name}}”？这位队友将离开你的团队：这位队友及其专属智能体定义会被移除，其记忆会被归档。对话、活动、简报和规则会被归档，而不是删除——之后仍可以找到。",
+      "fire_confirm_explain_purge": "解雇“{{name}}”并删除全部内容？这位队友将离开你的团队：这位队友及其专属智能体定义会被移除，其记忆会被归档。对话、活动、简报和规则会被删除，而不是归档。此操作无法撤销。",
+      "fire_purge_label": "同时删除会话、活动、简报和规则。此操作无法撤销。",
+      "fire_confirm": "是，解雇",
+      "fire_confirm_purge": "是，解雇并删除",
+      "firing": "正在解雇…",
+      "fire_failed": "无法解雇该成员。",
+      "fired_summary": "{{name}} 已被解雇。",
+      "fired_thread_archived": "其会话、活动和笔记已归档；会话仍可从“聊天”页面的<history/>中打开。",
+      "fired_thread_purged": "其会话、活动和笔记已删除。",
+      "fired_thread_kept": "其活动和笔记已删除，但会话无法删除；它仍保留在<history/>中。",
+      "fired_thread_kept_cron_claim": "其活动和笔记已删除，但会话无法删除：无法读取某个计划任务对它的归属声明。它仍保留在<history/>中。",
+      "fired_thread_kept_store": "其活动和笔记已删除，但会话无法删除：无法读取计划存储。它仍保留在<history/>中。",
+      "fired_history_link": "历史记录",
+      "fired_thread_none": "没有会话；活动和笔记已归档。",
+      "fired_dismiss": "关闭",
+      "fired_thread_none_purged": "没有会话；活动和笔记已删除。"
     }
   },
   "privacyDisclosure": {

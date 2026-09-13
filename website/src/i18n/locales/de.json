@@ -14959,7 +14959,26 @@
       "role_update_apply_blocked_one": "Wähle für das {{count}} beidseitig geänderte Feld „Meins behalten“ oder „Aus der Vorlage übernehmen“.",
       "role_update_apply_blocked_other": "Wähle für jedes der {{count}} beidseitig geänderten Felder „Meins behalten“ oder „Aus der Vorlage übernehmen“.",
       "detach_failed": "Das Mitglied konnte nicht getrennt werden.",
-      "role_update_member_moved": "Dieses Mitglied wurde seit diesem Plan bearbeitet. Prüfe ihn erneut."
+      "role_update_member_moved": "Dieses Mitglied wurde seit diesem Plan bearbeitet. Prüfe ihn erneut.",
+      "fire": "{{name}} entlassen",
+      "fire_explain": "Beim Entlassen verlässt dieses Crewmitglied Ihre Crew und seine eigene Agentendefinition wird entfernt; Unterhaltung, Aktivität und Notizen werden archiviert, nicht gelöscht. Nichts wird entfernt, bevor Sie bestätigen.",
+      "fire_confirm_explain": "„{{name}}“ entlassen? Dieses Crewmitglied verlässt Ihre Crew: das Crewmitglied und seine eigene Agentendefinition werden entfernt, sein Gedächtnis wird archiviert. Unterhaltung, Aktivität, Briefing und Regeln werden archiviert, nicht gelöscht – Sie finden sie später wieder.",
+      "fire_confirm_explain_purge": "„{{name}}“ entlassen und alles löschen? Dieses Crewmitglied verlässt Ihre Crew: das Crewmitglied und seine eigene Agentendefinition werden entfernt, sein Gedächtnis wird archiviert. Unterhaltung, Aktivität, Briefing und Regeln werden GELÖSCHT, nicht archiviert. Das kann nicht rückgängig gemacht werden.",
+      "fire_purge_label": "Auch Thread, Aktivität, Briefing und Regeln löschen. Das lässt sich nicht rückgängig machen.",
+      "fire_confirm": "Ja, entlassen",
+      "fire_confirm_purge": "Ja, entlassen und löschen",
+      "firing": "Wird entlassen…",
+      "fire_failed": "Das Mitglied konnte nicht entlassen werden.",
+      "fired_summary": "{{name}} wurde entlassen.",
+      "fired_thread_archived": "Thread, Aktivität und Notizen sind archiviert; der Thread lässt sich weiterhin über <history/> auf der Chat-Seite öffnen.",
+      "fired_thread_purged": "Thread, Aktivität und Notizen wurden gelöscht.",
+      "fired_thread_kept": "Aktivität und Notizen wurden gelöscht, der Thread jedoch nicht; er bleibt im <history/>.",
+      "fired_thread_kept_cron_claim": "Aktivität und Notizen wurden gelöscht, der Thread jedoch nicht: der Anspruch eines geplanten Jobs darauf konnte nicht gelesen werden. Er bleibt im <history/>.",
+      "fired_thread_kept_store": "Aktivität und Notizen wurden gelöscht, der Thread jedoch nicht: der Zeitplan-Speicher konnte nicht gelesen werden. Er bleibt im <history/>.",
+      "fired_history_link": "Verlauf",
+      "fired_thread_none": "Es gab keinen Thread; Aktivität und Notizen sind archiviert.",
+      "fired_dismiss": "Ausblenden",
+      "fired_thread_none_purged": "Es gab keinen Thread; Aktivität und Notizen wurden gelöscht."
     }
   },
   "privacyDisclosure": {
