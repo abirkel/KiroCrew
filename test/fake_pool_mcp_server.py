@@ -35,6 +35,29 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
+
+
+def _record(log: str, line: str) -> None:
+    """Append *line* to this PROCESS's own file under ``<log>.d/``.
+
+    Never a shared append. ``open(path, "a")`` from several processes is atomic
+    only on POSIX, where ``O_APPEND`` makes the seek-to-end and the write one
+    step; the Windows CRT emulates append with a separate seek and write, so two
+    backends writing at the same moment land at the same offset and one line is
+    LOST. The observations here are exactly the clustered kind that hits: the
+    storm test's backends all answer ``initialize`` after the same delay, and on
+    Windows the coarse timer tick wakes them on the same clock edge, which is how
+    a run counted 11 of 12 windows while all 12 stubs were answered.
+
+    One file per pid, appended only by that pid, and the reader concatenates.
+    Closed immediately: a backend that lingers must not hold a handle the test
+    reads, which on Windows would fail the read with a sharing violation.
+    """
+    directory = f"{log}.d"
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, f"{os.getpid()}.txt"), "a", encoding="utf-8") as fh:
+        fh.write(line)
 
 
 def main() -> int:
@@ -54,12 +77,18 @@ def main() -> int:
     # different one.
     tenant_log = sys.argv[3] if len(sys.argv) > 3 else ""
 
-    # One line per process launch. Opened in append mode and closed
-    # immediately: a backend that lingers must not hold the handle that the
-    # test reads, which on Windows would block the read with a sharing
-    # violation.
-    with open(log, "a", encoding="utf-8") as fh:
-        fh.write(f"{os.getpid()}\n")
+    # One line per process launch.
+    _record(log, f"{os.getpid()}\n")
+
+    # Optional slow handshake, for the admission tests: sleep this long before
+    # answering ``initialize`` so spawn+initialize windows overlap and the
+    # daemon's spawn gate has something to bound. ``FAKE_POOL_WINDOW_LOG`` then
+    # records ``<pid> <launch_epoch> <init_answered_epoch>`` per process, from
+    # which a test computes how many windows were ever open at once -- again a
+    # closed-box observation, needing nothing from the pool's internals.
+    init_delay = float(os.environ.get("FAKE_POOL_INIT_DELAY_SECS", "0") or 0)
+    window_log = os.environ.get("FAKE_POOL_WINDOW_LOG", "")
+    launched_at = time.time()
 
     for line in sys.stdin:
         line = line.strip()
@@ -79,11 +108,9 @@ def main() -> int:
             # backend sees when nothing injected -- so record it rather than
             # skipping the line.
             if caller_log:
-                with open(caller_log, "a", encoding="utf-8") as fh:
-                    fh.write(f"{block.get('sessionKey', '')}\n")
+                _record(caller_log, f"{block.get('sessionKey', '')}\n")
             if tenant_log:
-                with open(tenant_log, "a", encoding="utf-8") as fh:
-                    fh.write(f"{tenant.get('nonce', '')}\n")
+                _record(tenant_log, f"{tenant.get('nonce', '')}\n")
             sys.stdout.write(
                 json.dumps({"jsonrpc": "2.0", "id": msg.get("id"), "result": {}}) + "\n"
             )
@@ -91,6 +118,10 @@ def main() -> int:
             continue
         if method != "initialize":
             continue
+        if init_delay > 0:
+            time.sleep(init_delay)
+        if window_log:
+            _record(window_log, f"{os.getpid()} {launched_at:.6f} {time.time():.6f}\n")
         params = msg.get("params") or {}
         capabilities: dict = {"tools": {}}
         if caller_log or tenant_log:

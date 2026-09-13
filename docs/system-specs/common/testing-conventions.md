@@ -113,6 +113,21 @@ such as `.kiro/crew` that may also occur in `tmp_path`'s ancestors. Parameterize
 path-repair tests with a same-named ancestor directory so this stays independent
 of the runner's temporary directory.
 
+**A shared append is not atomic off POSIX, so N processes must not observe through
+one file.** `open(path, "a")` is race-free on POSIX because `O_APPEND` makes the
+seek-to-end and the write one kernel step; the Windows CRT emulates append with a
+separate seek and write, so two processes that reach the end offset together write
+over each other and one line is simply GONE. A harness that counts lines to observe
+"how many backends launched" or "how many handshakes completed" then reports a number
+short of the truth, and the test reads it as the behaviour being broken —
+`test_mcp_gateway_pool_integ` counted 11 of 12 windows on Windows while all 12 stubs
+had in fact been answered. The clustered writes are the ones that collide, and a
+coarse clock creates them: several processes sleeping the same delay wake on the same
+15.6 ms tick. Fix by removing the shared file, not by locking it — one file per
+writer (`fake_pool_mcp_server._record` writes `<log>.d/<pid>.txt`) and a reader that
+concatenates them, which needs no cross-platform locking primitive and keeps the
+observation closed-box.
+
 ### Links: use the conftest helpers, do not skip on Windows
 
 Creating a symlink on Windows needs `SeCreateSymbolicLinkPrivilege`; an unelevated
@@ -1632,6 +1647,26 @@ Two more shapes, both MEASURED in a 5x full-suite run on Windows:
   the real pass, which makes eligibility pure arithmetic and also stops an `== 0`
   assertion passing vacuously because a stamp aged out. Reading the clock inside the
   test instead is the weaker fix — it shrinks the gap to microseconds without closing it.
+
+Two more shapes this class hides, both Windows-only and both green on every Linux run:
+
+- **A state written in two phases across a thread boundary.** Waiting on ONE half is
+  not waiting on the state. A dependency park registers its waiter on the store's
+  writer thread and yields the lane slot in the continuation the thread's wake
+  schedules, so a barrier that stops at `len(coordinator.waiters(scope)) == 2` samples
+  `_running_count` mid-park: microseconds wide where a cross-thread wake is a self-pipe
+  write, tens of milliseconds where the loop has to return from an IOCP wait, and
+  `assert 1 == 0` when it loses. Wait on the CONJUNCTION the assertions then read
+  (`test_runloop_integration._await_parked`: waiters, slot count and row state
+  together) with a generous ceiling, never on the first half to become true.
+- **`time.monotonic()` has a ~15.6 ms tick on Windows through 3.12** (GetTickCount64;
+  QueryPerformanceCounter only from 3.13). Two reads inside one tick return the SAME
+  float, so a duration synthesized as `t0 = monotonic() - 0.2` and measured against a
+  second read is exactly 0.2 s round-tripped through a float subtraction — 199.999… at
+  some machine uptimes, which a `>= 200` assertion reads as a failure while the code is
+  correct. Bound such a sample instead of pinning it on the boundary: a floor an order
+  of magnitude below (which still fails a seconds-for-milliseconds bug) and, as the
+  ceiling, a span the test measures itself.
 
 **Guess-the-latency sleeps are this class too.** `asyncio.sleep(0.05)` "to let the
 first prompt register" is a bet that two awaits and a `to_thread` hop finish inside
