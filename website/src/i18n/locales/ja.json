@@ -5547,7 +5547,8 @@
         "oncall_ops": "オンコール & Ops",
         "other": "その他",
         "productivity": "生産性",
-        "research_writing": "リサーチ & 執筆"
+        "research_writing": "リサーチ & 執筆",
+        "templates": "テンプレート"
       },
       "categoryRail": {
         "add_source": "ソースを追加",
@@ -14717,7 +14718,10 @@
       "filter_source_package_description": "ケイパビリティパッケージによってインストールされたクルー",
       "member_count_filtered": "{{count}} 人中 {{shown}} 人のメンバー",
       "setup_in_crew_manager": "プライベートメモリを設定",
-      "own_copy_of": "{{template}} — カスタマイズ済みコピー"
+      "own_copy_of": "{{template}} — カスタマイズ済みコピー",
+      "provenance_apps_error": "インストール済みアプリを読み取れなかったため、テンプレートのアプリは ID で表示しています。",
+      "provenance_store": "{{app}} のテンプレート「{{agent}}」（v{{version}}）",
+      "provenance_store_unversioned": "{{app}} のテンプレート「{{agent}}」"
     }
   },
   "privacyDisclosure": {
