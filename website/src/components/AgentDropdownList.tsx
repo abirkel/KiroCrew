@@ -9,6 +9,10 @@ export interface AgentItem {
   name: string
   source: string
   description?: string
+  /** What the user calls a crewmate; the id stays `name`. */
+  display_name?: string
+  /** A hired crewmate (explicit enrollment) vs. an agent template. */
+  crewmate?: boolean
 }
 
 // ── Single agent row ──
@@ -40,8 +44,11 @@ function AgentButton({ a, active, isDefault, activeRef, onSelect, filter }: {
     >
       <div className="flex items-center gap-2">
         <span className={`text-[13px] font-mono font-semibold truncate ${active ? 'text-accent' : 'text-text'}`}>
-          {highlight(a.name)}
+          {highlight(a.crewmate && a.display_name ? a.display_name : a.name)}
         </span>
+        {a.crewmate && a.display_name && a.display_name !== a.name ? (
+          <span className="shrink-0 text-[11px] font-mono text-muted truncate" title={i18nT('components.agentDropdownList.crewmate_id')}>{a.name}</span>
+        ) : null}
         {isDefault ? (
           <span className="shrink-0 inline-flex items-center gap-1 px-1.5 py-[1px] rounded-full text-[11px] font-semibold bg-warn-subtle text-warn" title={i18nT('components.agentDropdownList.new_sessions_start_with_this_agent')}>
             <Star className="lucide-inline" />{i18nT('components.agentDropdownList.default')}
@@ -166,6 +173,7 @@ export default function AgentDropdownList({ agents, activeAgent, defaultAgent, o
   if (agents.length === 0) {
     return <div className="px-3 py-2 text-[13px] text-muted italic">{i18nT('components.agentDropdownList.no_matches')}</div>
   }
+  const grouped = groupAgentItems(agents)
 
   return (
     // Plain flex column: scrolling is owned by the host's listbox wrapper
@@ -176,10 +184,35 @@ export default function AgentDropdownList({ agents, activeAgent, defaultAgent, o
     // role="presentation" keeps this layout div out of the listbox's
     // owned-children chain (hosts put role="listbox" on their wrapper).
     <div role="presentation" className="flex flex-col">
-      {agents.map(a => {
-        const active = activeAgent === a.name
-        return <AgentButton key={a.name} a={a} active={active} isDefault={a.name === defaultAgent} activeRef={activeRef} onSelect={onSelect} filter={filter} />
-      })}
+      {grouped.map(group => (
+        <div key={group.id} role="presentation" className="flex flex-col" data-testid={`agent-group-${group.id}`}>
+          {grouped.length > 1 && (
+            // Two kinds of selection, named: a crewmate is an existing identity
+            // with its own thread and memory; a template starts a session and
+            // enrolls nobody. One list would let a reader take one for the other.
+            <div role="presentation" className="px-2.5 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted select-none">
+              {group.id === 'crewmates'
+                ? i18nT('components.agentDropdownList.group_crewmates')
+                : i18nT('components.agentDropdownList.group_templates')}
+            </div>
+          )}
+          {group.items.map(a => {
+            const active = activeAgent === a.name
+            return <AgentButton key={a.name} a={a} active={active} isDefault={a.name === defaultAgent} activeRef={activeRef} onSelect={onSelect} filter={filter} />
+          })}
+        </div>
+      ))}
     </div>
   )
+}
+
+/** Crewmates first, then everything else; a group with no rows is left out, and a
+ *  roster with no crewmates renders as one unlabelled list (nothing to tell apart). */
+export function groupAgentItems<T extends AgentItem>(agents: T[]): { id: 'crewmates' | 'templates'; items: T[] }[] {
+  const crewmates = agents.filter(a => a.crewmate === true)
+  const templates = agents.filter(a => a.crewmate !== true)
+  const out: { id: 'crewmates' | 'templates'; items: T[] }[] = []
+  if (crewmates.length) out.push({ id: 'crewmates', items: crewmates })
+  if (templates.length) out.push({ id: 'templates', items: templates })
+  return out
 }

@@ -13,7 +13,7 @@ import { useLocation } from 'react-router-dom'
 import type { MemoryStoreSummary } from '../types'
 
 const { api } = vi.hoisted(() => ({ api: {
-  memoryStores: vi.fn(), memoryRecords: vi.fn(), memoryEditPreview: vi.fn(), memoryEditPreviewPage: vi.fn(), memoryEditApply: vi.fn(), memoryRecordsRefresh: vi.fn(), memoryRecordHistory: vi.fn(), memberMemoryPage: vi.fn(), memorySeed: vi.fn(), memoryRecall: vi.fn(),
+  members: vi.fn(), memoryStores: vi.fn(), memoryRecords: vi.fn(), memoryEditPreview: vi.fn(), memoryEditPreviewPage: vi.fn(), memoryEditApply: vi.fn(), memoryRecordsRefresh: vi.fn(), memoryRecordHistory: vi.fn(), memberMemoryPage: vi.fn(), memorySeed: vi.fn(), memoryRecall: vi.fn(),
   vectorSemanticWrite: vi.fn(), vectorSemanticDelete: vi.fn(), vectorEpisodicDelete: vi.fn(),
   memoryPreferences: vi.fn(), memoryProjects: vi.fn(), memoryHistory: vi.fn(),
   saveMemoryPreferences: vi.fn(), saveMemoryProjects: vi.fn(),
@@ -66,6 +66,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   window.history.replaceState({}, '', `/settings/overview?view=memory&store=${MEMBER_STORE}`)
   api.memoryStores.mockResolvedValue({ stores, active: 'default' })
+  // The roster the panel reads to offer a member conversation: the stores' owners are crewmates by default.
+  api.members.mockResolvedValue({ members: [{ name: 'reviewer', display_name: 'reviewer' }, { name: 'writer', display_name: 'writer' }] })
   api.memberMemoryPage.mockImplementation(async (store: string, table: string, offset: number) => ({ entries: offset ? [] : store === 'default' ? table === 'semantic' ? [
     { key: 'global.selected', value_json: 'Selected source knowledge' },
     { key: 'global.unselected', value_json: 'Unselected source knowledge' },
@@ -246,19 +248,33 @@ describe('private member memory lifecycle', () => {
     await screen.findByText('A fresh start for this member')
     expect(screen.getByRole('button', { name: 'Copy memories', exact: true })).toBe(copy)
     expect(copy).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Open member conversation' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: 'Open crewmate conversation' })).toBeVisible()
     expect(api.memorySeed).not.toHaveBeenCalled()
   })
 
   it('opens an empty member’s exact conversation without copying global memory', async () => {
     api.memberMemoryPage.mockResolvedValue({ entries: [] })
+    api.members.mockResolvedValue({ members: [{ name: 'Review & QA', display_name: 'Review & QA' }] })
     api.memoryStores.mockResolvedValue({ stores: stores.map(s => s.name === MEMBER_STORE ? { ...s, owner_member: 'Review & QA', semantic_count: 0, episodic_count: 0 } : s), active: 'default' })
     renderWithProviders(<><MemoryTab refreshTrigger={0} /><RouteLocation /></>)
     await screen.findByText('A fresh start for this member')
-    fireEvent.click(screen.getByRole('button', { name: 'Open member conversation' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Open crewmate conversation' }))
     expect(screen.getByTestId('route-location')).toHaveTextContent('/members?member=Review%20%26%20QA')
     expect(api.memorySeed).not.toHaveBeenCalled()
     expect(api.memberMemoryPage.mock.calls.every(call => call[0] === MEMBER_STORE)).toBe(true)
+  })
+
+  it('offers no member conversation for a private memory whose owner is not a crewmate', async () => {
+    // Explicit enrollment: a plain crew with private memory is a session agent.
+    // The Crew roster does not list it, so the door to its thread is not shown.
+    api.memberMemoryPage.mockResolvedValue({ entries: [] })
+    api.members.mockResolvedValue({ members: [] })
+    api.memoryStores.mockResolvedValue({ stores: stores.map(s => s.name === MEMBER_STORE ? { ...s, owner_member: 'Review & QA', semantic_count: 0, episodic_count: 0 } : s), active: 'default' })
+    renderWithProviders(<><MemoryTab refreshTrigger={0} /><RouteLocation /></>)
+    await screen.findByText('A fresh start for this member')
+    await waitFor(() => expect(api.members).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: 'Open crewmate conversation' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Copy memories', exact: true })).toBeEnabled()
   })
 
   it('explains and retries a listing-marked unavailable store, with a direct recovery action', async () => {

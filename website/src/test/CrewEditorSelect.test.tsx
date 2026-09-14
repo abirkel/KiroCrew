@@ -243,7 +243,7 @@ async function openEditor(name: string): Promise<HTMLElement> {
 /** Open the editor dialog in create mode and return the dialog element. */
 async function openCreate(): Promise<HTMLElement> {
   fireEvent.click(screen.getByTestId('new-crew'))
-  return await screen.findByRole('dialog', { name: 'Add crew member' })
+  return await screen.findByRole('dialog', { name: 'Add a crewmate' })
 }
 
 describe('crew editor — collision warning', () => {
@@ -455,7 +455,7 @@ describe('crew editor — keyboard (via a binding select)', () => {
     // the right thing, and it is why this is asserted through the DOM rather than
     // by role: the editor must still be MOUNTED (the form is not destroyed) even
     // though it is hidden from AT.
-    const editorEl = document.querySelector('[aria-label="Add crew member"]')
+    const editorEl = document.querySelector('[aria-label="Add a crewmate"]')
     expect(editorEl).toBeTruthy()
     expect(editorEl!.closest('[aria-hidden="true"]')).toBeTruthy()
 
@@ -468,12 +468,12 @@ describe('crew editor — keyboard (via a binding select)', () => {
       expect(screen.queryByRole('dialog', { name: 'Create Workspace' })).not.toBeInTheDocument(),
     )
     // ...and with the nested layer gone the editor is exposed to AT again.
-    expect(screen.getByRole('dialog', { name: 'Add crew member' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Add a crewmate' })).toBeInTheDocument()
 
     // Once the nested dialog is gone the editor owns Escape again.
     pressEscape()
     await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'Add crew member' })).not.toBeInTheDocument(),
+      expect(screen.queryByRole('dialog', { name: 'Add a crewmate' })).not.toBeInTheDocument(),
     )
   })
 })

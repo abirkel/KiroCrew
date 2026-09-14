@@ -60,6 +60,10 @@ ROSTER_ROW_KEYS = frozenset(
         "role",
         "session_color",
         "avatar",
+        # Explicit enrollment: whether the row is a hired crewmate (the sealed
+        # record) or a template / plain crew; the session pickers group on it.
+        # Handler-added like ``name`` and ``scope`` (not a record field), a bool.
+        "crewmate",
     }
 )
 
@@ -67,7 +71,7 @@ ROSTER_ROW_KEYS = frozenset(
 # ``website/src``: the two watchdog windows are backend scheduling knobs the
 # roster does not render, ``telegram_account`` is deprecated and inert, and
 # ``starred`` is a Crew Members roster preference that only ``GET /api/members``
-# renders (the crew manager has no star affordance), and ``legacy_key`` is the
+# renders (the crew manager has no star affordance), ``legacy_key`` is the
 # loader's own bookkeeping (the pre-migration key an overlay row is read under).
 WITHHELD_RECORD_FIELDS = frozenset(
     {
@@ -257,7 +261,7 @@ class TestRosterRowIsAnAllowlistNotASpread:
         # stop classifying anything and let the next added field through.
         assert WITHHELD_RECORD_FIELDS <= record_fields
         # And the allowlist must not claim a record field that does not exist.
-        assert ROSTER_ROW_KEYS - {"name", "scope"} <= record_fields
+        assert ROSTER_ROW_KEYS - {"name", "scope", "crewmate"} <= record_fields
 
     def test_an_attribute_the_allowlist_does_not_name_is_dropped(self) -> None:
         """Behavioral proof, not just a literal comparison.
@@ -307,7 +311,7 @@ class TestUnshowableValuesAreMasked:
     # ``TestAvatarIsShapeAllowlistedNotMasked``. Excluded here rather than
     # softening these assertions, so the rule for every other field stays
     # "the sentinel, exactly".
-    RECORD_FIELDS_SHIPPED = tuple(sorted(ROSTER_ROW_KEYS - {"name", "scope", "avatar"}))
+    RECORD_FIELDS_SHIPPED = tuple(sorted(ROSTER_ROW_KEYS - {"name", "scope", "avatar", "crewmate"}))
 
     def _full(self) -> KiroCrewAgentConfig:
         return KiroCrewAgentConfig(
@@ -352,7 +356,7 @@ class TestUnshowableValuesAreMasked:
     def test_every_value_is_a_string_except_the_one_structured_field(self) -> None:
         """`dict[str, object]` is honest about exactly one field, not a loophole.
 
-        Every value is a `str` but `avatar`, which is a `dict` the dashboard needs
+        Every value is a `str` but `avatar` (a `dict` the dashboard needs) and `crewmate` (a bool); the former
         verbatim. Asserting the exception BY NAME means a second structured field
         cannot appear without this test failing.
         """
@@ -362,7 +366,9 @@ class TestUnshowableValuesAreMasked:
             row = _agent_roster_row("probe", "global", cfg, redact=redact)
             assert isinstance(row["avatar"], dict)
             non_str = {k for k, v in row.items() if not isinstance(v, str)}
-            assert non_str == {"avatar"}, f"unexpected structured value(s): {non_str}"
+            # ``crewmate`` is the one handler-added bool (enrollment, never record text).
+            assert isinstance(row["crewmate"], bool)
+            assert non_str == {"avatar", "crewmate"}, f"unexpected structured value(s): {non_str}"
 
     def test_owner_keeps_name_addressable_but_app_token_does_not_need_it(self) -> None:
         """``name`` survives only where something can actually address it.
@@ -705,13 +711,13 @@ class TestCallerClassIsTheOwnerPredicate:
         app.router.add_get("/api/agents", api_kirocrew_agents)
         return app
 
-    async def _name_for(self, app: web.Application, tmp: Path) -> str:
+    async def _row_for(self, app: web.Application, tmp: Path) -> dict:
         with unittest.mock.patch("kiro_crew.config.loader.config_path", return_value=tmp):
             async with TestClient(TestServer(app)) as client:
                 resp = await client.get("/api/agents")
                 assert resp.status == 200
                 rows = (await resp.json())["agents"]
-        return str(rows[0]["name"])
+        return dict(rows[0])
 
     def _seed(self) -> Path:
         seed = _seed_config_with_every_field_set()
@@ -728,22 +734,35 @@ class TestCallerClassIsTheOwnerPredicate:
         `request.get("app", "")` asks "is this an app?", and a non-owner DASHBOARD
         session answers no -- an allow-listed messaging user running `!dashboard`
         holds a dashboard token with `app == ""`. That caller is not the trust
-        root, so it must not receive a credential-shaped crew name raw.
+        root, so it must not receive a credential-shaped crew name raw. The
+        member-id migration keeps the credential out of the ``name`` (a
+        sensitive key is re-keyed to an opaque id, grammar-valid or not) and
+        parks the typed key in ``legacy_key``, which the roster withholds; the
+        row this caller reads carries the credential nowhere.
         """
         tmp = self._seed()
         try:
-            name = await self._name_for(self._app(user="someone-else", owner_id="owner-1"), tmp)
-            assert _carries_mask(name), "a non-owner dashboard session saw the raw name"
+            row = await self._row_for(self._app(user="someone-else", owner_id="owner-1"), tmp)
+            assert self.PROBE not in json.dumps(
+                row
+            ), "a non-owner dashboard session saw the raw key"
+            assert not _carries_mask(row["name"])  # an opaque id, not a masked credential
         finally:
             tmp.unlink(missing_ok=True)
 
     @pytest.mark.asyncio
     async def test_the_owner_still_gets_an_addressable_global_name(self) -> None:
-        """The owner keeps the row's only handle, or edit and delete break."""
+        """The owner keeps the row's only handle, or edit and delete break: the
+        opaque id the migration minted for the credential-shaped key, with the
+        label the row already carried (a rename the migration preserves)."""
+        from kiro_crew.member_identity import opaque_member_id
+
         tmp = self._seed()
         try:
-            name = await self._name_for(self._app(user="owner-1", owner_id="owner-1"), tmp)
-            assert name == f"crew-{self.PROBE}"
+            row = await self._row_for(self._app(user="owner-1", owner_id="owner-1"), tmp)
+            assert row["name"] == opaque_member_id(f"crew-{self.PROBE}")
+            assert row["display_name"] == "Probe Display"
+            assert self.PROBE not in json.dumps(row)
         finally:
             tmp.unlink(missing_ok=True)
 
@@ -756,8 +775,8 @@ class TestCallerClassIsTheOwnerPredicate:
         """
         tmp = self._seed()
         try:
-            name = await self._name_for(_make_app(), tmp)
-            assert _carries_mask(name)
+            row = await self._row_for(_make_app(), tmp)
+            assert self.PROBE not in json.dumps(row)
         finally:
             tmp.unlink(missing_ok=True)
 

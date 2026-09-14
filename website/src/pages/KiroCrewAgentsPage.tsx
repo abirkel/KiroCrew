@@ -1246,18 +1246,36 @@ export default function KiroCrewAgentsPage({ embedded }: { embedded?: boolean } 
   }, [refetchWorkspaces])
 
   const createMut = useMutation({
-    mutationFn: ({ epoch: _epoch, ...data }: CreatePayload & { epoch: number }) => api.createKirocrewAgent(data),
+    // Two verbs behind one form. From the crew manager the form CREATES a
+    // crew: a plain row bound to a shared template, a session agent. From the
+    // Crew page ("Add a Crewmate") it HIRES: the same fields -- the template
+    // picked, the name typed, Hire pressed -- go to POST /api/members, which
+    // copies the template into the crewmate's own definition, gives it private
+    // memory and enrolls it, so the roster the form returns to actually lists
+    // what was just added. A plain create there would land on a Crew page that
+    // omits the row and says it is not on the roster.
+    mutationFn: ({ epoch: _epoch, ...data }: CreatePayload & { epoch: number }) =>
+      fromMembers
+        ? api.hireMember({
+            source: { kind: 'local', agent: data.kiro_agent },
+            display_name: data.name,
+            role: data.role,
+            workspace: data.workspace,
+            triggers: data.triggers,
+            session_color: data.session_color,
+          }).then((r): AgentMutationResult => ({ error: r.error, name: r.id }))
+        : api.createKirocrewAgent(data),
     onSuccess: (r: AgentMutationResult, vars) => {
       refetchAgents()
-      // The Members roster sent the user here to add a member; the member now
-      // exists, so the next step they want is its thread, not the crew list.
-      // Only for the panel the write was fired from (see settleFor). Exact
-      // name, not slug — MembersPage's `?member=` resolves by name.
+      // The Crew page sent the user here to add a crewmate; the crewmate now
+      // exists and is enrolled, so the next step they want is its thread, not
+      // the crew list. Only for the panel the write was fired from (see
+      // settleFor).
       if (fromMembers && !r.error && vars.epoch === sheetEpoch.current) {
         dismissSheet()
-        // By the MINTED id the server answered with, not the typed text: for
+        // By the MINTED id the hire answered with, not the typed text: for
         // "case competition" the id is "case-competition", and the roster's
-        // `?member=` resolves by id. A pre-split gateway echoes the name.
+        // `?member=` resolves by id.
         navigate(`/members?member=${encodeURIComponent(r.name || vars.name)}`)
         return
       }
@@ -1265,9 +1283,9 @@ export default function KiroCrewAgentsPage({ embedded }: { embedded?: boolean } 
     },
     onError: (e: Error, vars) => {
       // The server's wording is the crew manager's ("Agent 'x' already
-      // exists"); inside the member-titled form the same outcome is said in
-      // the form's own word. 409 is the create route's one "name taken"
-      // answer, so the status is the signal, not the message text.
+      // exists"); inside the crewmate-titled form the same outcome is said in
+      // the form's own word. 409 is the one "name taken" answer of both the
+      // create and the hire, so the status is the signal, not the message text.
       if (fromMembers && e instanceof ApiError && e.status === 409) {
         settleFor(vars.epoch, i18nT('pages.kiroCrewAgentsPage.member_already_exists', { name: vars.name }))
         return

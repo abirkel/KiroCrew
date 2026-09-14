@@ -65,6 +65,7 @@ vi.mock('framer-motion', async () => {
 /* ── Mock api client ── */
 const mockApi = vi.hoisted(() => ({
   kirocrewAgents: vi.fn(),
+  hireMember: vi.fn(),
   agentsInstalled: vi.fn(),
   agentDetail: vi.fn(),
   workspaces: vi.fn(),
@@ -170,6 +171,7 @@ beforeEach(() => {
   // The mutation hooks read `.error` off the resolved body, so an undefined
   // resolution (a bare vi.fn()) would throw inside onSuccess.
   mockApi.createKirocrewAgent.mockResolvedValue({})
+  mockApi.hireMember.mockResolvedValue({ ok: true, id: 'staging' })
   mockApi.updateKirocrewAgent.mockResolvedValue({})
   mockApi.deleteKirocrewAgent.mockResolvedValue({})
   mockApi.setDefaultAgent.mockResolvedValue({})
@@ -210,7 +212,7 @@ async function openEditor(name: string): Promise<HTMLElement> {
 /** Open the editor dialog in create mode and return the dialog element. */
 async function openCreate(): Promise<HTMLElement> {
   fireEvent.click(screen.getByTestId('new-crew'))
-  return await screen.findByRole('dialog', { name: 'Add crew member' })
+  return await screen.findByRole('dialog', { name: 'Add a crewmate' })
 }
 
 /**
@@ -570,7 +572,7 @@ describe('crew editor — opening', () => {
     expect(within(sheet).getByRole('combobox', { name: 'Edit default model' })).toHaveTextContent('claude-opus-5')
   })
 
-  it('opens the create dialog from "Add crew member"', async () => {
+  it('opens the create dialog from "Add a crewmate"', async () => {
     await renderRoster()
     const sheet = await openCreate()
     // Create mode has no crew to edit yet, so the bindings start on the defaults.
@@ -594,7 +596,7 @@ describe('crew editor — create', () => {
     expect(await within(sheet).findByText('Name is required')).toBeInTheDocument()
     expect(mockApi.createKirocrewAgent).not.toHaveBeenCalled()
     // The dialog stays open so the user can fix it in place.
-    expect(screen.getByRole('dialog', { name: 'Add crew member' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Add a crewmate' })).toBeInTheDocument()
   })
 
   it('refuses a crew with no Agent Template chosen, without calling the api', async () => {
@@ -1292,7 +1294,7 @@ describe('avatar editor entry — discoverability (issue #9103)', () => {
   it('deep link ?new=1 opens the create form directly, then strips the param', async () => {
     renderPage('/capabilities?tab=crews&new=1')
     // A "New crew" deep link with no origin is this page's own form.
-    await screen.findByRole('dialog', { name: 'Add crew member' })
+    await screen.findByRole('dialog', { name: 'Add a crewmate' })
     // Consumed: closing the form must not re-open it on the next render, and
     // Back must not land on a form the user already left.
     await waitFor(() => expect(screen.getByTestId('location-search')).toHaveTextContent(/^\?tab=crews$/))
@@ -1302,24 +1304,24 @@ describe('avatar editor entry — discoverability (issue #9103)', () => {
     renderPage('/capabilities?tab=crews&new=1&from=members')
     // The Members roster's "+" lands HERE — on the form, not on the list a
     // second "New crew" click would be needed on (#9513) — and the form says
-    // what the user pressed ("Add crew member"), not "Create Agent".
-    const sheet = await screen.findByRole('dialog', { name: 'Add crew member' })
-    expect(screen.getByRole('heading', { name: 'Add crew member' })).toBeInTheDocument()
-    // The body keeps the same word: the section heading and the triggers
-    // helper say "member", not "agent", so the form never renames the thing
+    // what the user pressed ("Add a crewmate"), not "Create Agent".
+    const sheet = await screen.findByRole('dialog', { name: 'Add a crewmate' })
+    expect(screen.getByRole('heading', { name: 'Add a crewmate' })).toBeInTheDocument()
+    // The body keeps the same word: the section heading and the helpers say
+    // "crewmate", not "agent" or "member", so the form never renames the thing
     // one field in.
-    expect(within(sheet).getByRole('heading', { name: 'What this member uses' })).toBeInTheDocument()
+    expect(within(sheet).getByRole('heading', { name: 'What this crewmate uses' })).toBeInTheDocument()
     expect(within(sheet).queryByRole('heading', { name: 'What this agent uses' })).toBeNull()
-    expect(within(sheet).getByText(/hand work to this member/)).toBeInTheDocument()
-    expect(within(sheet).getByText(/The starting setup this member uses/)).toBeInTheDocument()
-    expect(within(sheet).getByText(/no member color/)).toBeInTheDocument()
+    expect(within(sheet).getByText(/hand work to this crewmate/)).toBeInTheDocument()
+    expect(within(sheet).getByText(/The starting setup this crewmate uses/)).toBeInTheDocument()
+    expect(within(sheet).getByText(/no crewmate color/)).toBeInTheDocument()
     expect(within(sheet).queryByText(/this agent/)).toBeNull()
     await waitFor(() => expect(screen.getByTestId('location-search')).toHaveTextContent(/^\?tab=crews$/))
   })
 
   it('cancelling a create that arrived from the Members roster returns to the roster', async () => {
     renderPage('/capabilities?tab=crews&new=1&from=members')
-    const sheet = await screen.findByRole('dialog', { name: 'Add crew member' })
+    const sheet = await screen.findByRole('dialog', { name: 'Add a crewmate' })
     await waitFor(() => expect(screen.getByTestId('location-search')).toHaveTextContent(/^\?tab=crews$/))
     fireEvent.click(within(sheet).getByRole('button', { name: 'Cancel' }))
     // Not stranded on a crew list the user never asked to visit.
@@ -1327,9 +1329,14 @@ describe('avatar editor entry — discoverability (issue #9103)', () => {
     expect(screen.getByTestId('location-search')).toHaveTextContent(/^$/)
   })
 
-  it('a create that arrived via ?new=1&from=members lands on the new member\'s thread', async () => {
+  it('a create that arrived via ?new=1&from=members HIRES (POST /api/members) and lands on the crewmate\'s thread', async () => {
+    // The Crew page's "Add a Crewmate" must add a crewmate: the form's fields go
+    // to the hire route, which copies the template, gives the crewmate private
+    // memory and enrolls it -- a plain create there would land on a roster
+    // that omits the row. The plain create stays the crew manager's.
+    mockApi.hireMember.mockResolvedValue({ ok: true, id: 'staging' })
     renderPage('/capabilities?tab=crews&new=1&from=members')
-    const sheet = await screen.findByRole('dialog', { name: 'Add crew member' })
+    const sheet = await screen.findByRole('dialog', { name: 'Add a crewmate' })
     const user = userEvent.setup()
     await user.type(within(sheet).getByPlaceholderText('e.g. oncall'), 'staging')
     const template = within(sheet).getByRole('combobox', { name: 'Agent Template' })
@@ -1337,29 +1344,34 @@ describe('avatar editor entry — discoverability (issue #9103)', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'oncall-agent' }))
     // The primary action names its object in the roster's words.
     expect(within(sheet).queryByRole('button', { name: 'Create' })).toBeNull()
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Create member' }))
-    await waitFor(() => expect(mockApi.createKirocrewAgent).toHaveBeenCalled())
-    // Exact name in `?member=` — MembersPage resolves by name, not slug.
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Hire crewmate' }))
+    await waitFor(() => expect(mockApi.hireMember).toHaveBeenCalledTimes(1))
+    expect(mockApi.hireMember.mock.calls[0][0]).toMatchObject({
+      source: { kind: 'local', agent: 'oncall-agent' },
+      display_name: 'staging',
+    })
+    expect(mockApi.createKirocrewAgent).not.toHaveBeenCalled()
+    // The id the hire answered with in `?member=`.
     await waitFor(() => expect(screen.getByTestId('location-pathname')).toHaveTextContent('/members'))
     expect(screen.getByTestId('location-search')).toHaveTextContent(/^\?member=staging$/)
   })
 
   it('a duplicate name from the Members roster is refused in the form\'s own word', async () => {
-    mockApi.createKirocrewAgent.mockRejectedValueOnce(new ApiError(409, "Agent 'staging' already exists", '{"error":"Agent \'staging\' already exists"}'))
+    mockApi.hireMember.mockRejectedValueOnce(new ApiError(409, "Agent 'staging' already exists", '{"error":"Agent \'staging\' already exists","code":"agent_exists"}'))
     renderPage('/capabilities?tab=crews&new=1&from=members')
-    const sheet = await screen.findByRole('dialog', { name: 'Add crew member' })
+    const sheet = await screen.findByRole('dialog', { name: 'Add a crewmate' })
     const user = userEvent.setup()
     await user.type(within(sheet).getByPlaceholderText('e.g. oncall'), 'staging')
     const template = within(sheet).getByRole('combobox', { name: 'Agent Template' })
     fireEvent.keyDown(template, { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: 'oncall-agent' }))
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Create member' }))
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Hire crewmate' }))
     // The server says "Agent"; the member-titled form does not repeat it.
     const err = await screen.findByTestId('crew-sheet-error')
-    expect(err).toHaveTextContent("A member named 'staging' already exists.")
+    expect(err).toHaveTextContent("A crewmate named 'staging' already exists.")
     expect(err).not.toHaveTextContent(/Agent/)
     // Still on the form — a refusal is not a dismissal.
-    expect(screen.getByRole('dialog', { name: 'Add crew member' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Add a crewmate' })).toBeInTheDocument()
     // Editing the name answers the error: it clears, so Create reads as
     // safe to press again.
     await user.type(within(sheet).getByPlaceholderText('e.g. oncall'), '2')
@@ -1467,18 +1479,18 @@ describe('crew identity — id vs display name (wrapper step 1)', () => {
   it('a create from the Members roster lands on the MINTED id, not the typed text', async () => {
     // "case competition" — the incident. The server mints `case-competition`
     // and keeps the typed string as the display name.
-    mockApi.createKirocrewAgent.mockResolvedValue({ ok: true, name: 'case-competition', id: 'case-competition', display_name: 'case competition' })
+    mockApi.hireMember.mockResolvedValue({ ok: true, id: 'case-competition' })
     renderPage('/capabilities?tab=crews&new=1&from=members')
-    const sheet = await screen.findByRole('dialog', { name: 'Add crew member' })
+    const sheet = await screen.findByRole('dialog', { name: 'Add a crewmate' })
     const user = userEvent.setup()
     await user.type(within(sheet).getByPlaceholderText('e.g. oncall'), 'case competition')
     await user.type(within(sheet).getByTestId('crew-role-input'), 'Judge')
     const template = within(sheet).getByRole('combobox', { name: 'Agent Template' })
     fireEvent.keyDown(template, { key: 'ArrowDown' })
     fireEvent.click(await screen.findByRole('option', { name: 'oncall-agent' }))
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Create member' }))
-    await waitFor(() => expect(mockApi.createKirocrewAgent).toHaveBeenCalled())
-    expect(mockApi.createKirocrewAgent.mock.calls[0][0]).toMatchObject({ name: 'case competition', role: 'Judge' })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Hire crewmate' }))
+    await waitFor(() => expect(mockApi.hireMember).toHaveBeenCalled())
+    expect(mockApi.hireMember.mock.calls[0][0]).toMatchObject({ display_name: 'case competition', role: 'Judge' })
     await waitFor(() => expect(screen.getByTestId('location-pathname')).toHaveTextContent('/members'))
     expect(screen.getByTestId('location-search')).toHaveTextContent(/^\?member=case-competition$/)
   })
