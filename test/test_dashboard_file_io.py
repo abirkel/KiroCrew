@@ -124,6 +124,97 @@ class TestFileRead:
             assert json.loads(text)["label"] == "中文標籤範例"
 
     @pytest.mark.asyncio
+    async def test_read_binary_returns_envelope_not_mojibake(self, tmp_path, mock_sel, home_patch):
+        # A NUL byte inside the sniff window is the binary verdict. Before the
+        # sniff this returned the whole file decoded with errors="replace" --
+        # a screenful of U+FFFD rendered in the side panel's code editor.
+        f = tmp_path / "archive.bin"
+        f.write_bytes(b"PK\x03\x04\x00\x00garbage\xff\xfe" * 8)
+        async with TestClient(TestServer(_make_app())) as client:
+            resp = await client.get(f"/api/file-read?path={f}")
+            assert resp.status == 200
+            assert resp.headers["X-File-Binary"] == "true"
+            body = await resp.json()
+            assert body["binary"] is True
+            assert body["content"] == ""
+            # The header plus the empty body is the whole contract: nothing in
+            # the envelope is decoded file content.
+            assert set(body) == {"binary", "content"}
+            assert "\ufffd" not in json.dumps(body)
+            mock_sel.log_tool_invocation.assert_called_with(
+                session_key="dashboard",
+                tool_name="file_read",
+                outcome="success",
+                resources=str(f),
+            )
+
+    @pytest.mark.asyncio
+    async def test_read_extensionless_binary_is_sniffed(self, tmp_path, mock_sel, home_patch):
+        # The sniff -- not an extension list -- is the source of truth, which is
+        # the whole reason detectFileType is left alone: this file has no
+        # extension to look up.
+        f = tmp_path / "coredump"
+        f.write_bytes(b"\x7fELF\x02\x01\x01\x00" + b"\x00" * 64)
+        async with TestClient(TestServer(_make_app())) as client:
+            resp = await client.get(f"/api/file-read?path={f}")
+            assert resp.status == 200
+            assert resp.headers["X-File-Binary"] == "true"
+            body = await resp.json()
+            assert body["binary"] is True
+
+    @pytest.mark.asyncio
+    async def test_read_undecodable_but_nul_free_stays_text(self, tmp_path, mock_sel, home_patch):
+        # Control: the sniff must NOT widen to "has undecodable bytes". A
+        # latin-1 source file is still a source file, and the lossy decode is
+        # the right answer for it -- turning this into a download card would be
+        # the regression this test exists to catch.
+        f = tmp_path / "legacy.py"
+        f.write_bytes(b"# caf\xe9 na\xefve\nx = 1\n")
+        async with TestClient(TestServer(_make_app())) as client:
+            resp = await client.get(f"/api/file-read?path={f}")
+            assert resp.status == 200
+            assert "X-File-Binary" not in resp.headers
+            assert "x = 1" in await resp.text()
+
+    @pytest.mark.asyncio
+    async def test_read_nul_past_sniff_window_stays_text(self, tmp_path, mock_sel, home_patch):
+        # The window is bounded on purpose (8 KiB, matching the Files app), so a
+        # NUL beyond it reads as text. Pins the boundary rather than asserting
+        # the implementation happens to read the whole file.
+        f = tmp_path / "late.log"
+        f.write_bytes(b"a" * 9000 + b"\x00tail")
+        async with TestClient(TestServer(_make_app())) as client:
+            resp = await client.get(f"/api/file-read?path={f}")
+            assert resp.status == 200
+            assert "X-File-Binary" not in resp.headers
+
+    @pytest.mark.asyncio
+    async def test_read_text_truncation_survives_the_sniff(self, tmp_path, mock_sel, home_patch):
+        # The sniff reads the first 8 KiB off the descriptor and seeks back, so
+        # a capped read must still see the WHOLE file and still flag it.
+        f = tmp_path / "big.txt"
+        f.write_text("x" * (512_000 + 10), encoding="utf-8")
+        async with TestClient(TestServer(_make_app())) as client:
+            resp = await client.get(f"/api/file-read?path={f}")
+            assert resp.status == 200
+            assert resp.headers["X-Truncated"] == "true"
+            assert len(await resp.text()) == 512_000
+
+    @pytest.mark.asyncio
+    async def test_read_head_on_binary_still_answers_from_the_stat(
+        self, tmp_path, mock_sel, home_patch
+    ):
+        # HEAD passes read_cap 0 and must open nothing, so it never reaches the
+        # sniff -- it stays a path-kind probe for a binary file too.
+        f = tmp_path / "blob.bin"
+        f.write_bytes(b"\x00\x01\x02")
+        async with TestClient(TestServer(_make_app())) as client:
+            resp = await client.head(f"/api/file-read?path={f}")
+            assert resp.status == 200
+            assert resp.headers["X-Path-Kind"] == "file"
+            assert "X-File-Binary" not in resp.headers
+
+    @pytest.mark.asyncio
     async def test_read_jsonl_sets_x_ndjson_content_type(self, tmp_path, mock_sel, home_patch):
         # JSONL is NOT a single JSON document — must use application/x-ndjson
         # so clients don't try to parse the whole body as one JSON value.

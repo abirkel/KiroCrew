@@ -98,6 +98,18 @@ describe('usePanelTabs', () => {
     expect(result.current.activeTab?.savedContent).toBe('on-disk')
   })
 
+  it('re-opening a dirty text tab applies the disk binary verdict', () => {
+    const { result } = renderHook(() => usePanelTabs(null, mock.descriptors))
+    act(() => result.current.openFile('/a.bin', 'x', 'slot', { binary: false }))
+    act(() => result.current.patchTab('file:/a.bin', { content: 'x edited' }))
+
+    act(() => result.current.openFile('/a.bin', '', 'slot', { binary: true }))
+
+    expect(result.current.activeTab?.content).toBe('x edited')
+    expect(result.current.activeTab?.savedContent).toBe('x')
+    expect(result.current.activeTab?.binary).toBe(true)
+  })
+
   it('re-opening a clean file refreshes it from disk', () => {
     const { result } = renderHook(() => usePanelTabs(null, mock.descriptors))
     act(() => result.current.openFile('/notes.md', 'version-1'))

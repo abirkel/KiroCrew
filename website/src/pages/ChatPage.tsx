@@ -1,7 +1,7 @@
 import { Fragment, useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate, useNavigationType, useSearchParams } from 'react-router-dom'
-import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useModelsDegraded } from '../providers/modelListHealth'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { useVisualViewport } from '../hooks/useVisualViewport'
@@ -67,7 +67,7 @@ import {
   normalizeAutomationRecord,
   type AutomationRecord,
 } from '../monitoring/automation'
-import { fileReadUrl } from '../utils/fileReadUrl'
+import { readFile } from '../utils/fileReadQuery'
 import { safeSetItem, safeSetSessionItem } from '../utils/safeStorage'
 import { handleStopPress, isEscalationState } from '../utils/stopDebounce'
 import { EmptyState, Btn, Input } from '../components/ui'
@@ -3465,64 +3465,67 @@ export default function ChatPage({ mode, embedded, embedMode, popout, noUrlSync 
     window.addEventListener('mc:run-in-terminal', handler)
     return () => window.removeEventListener('mc:run-in-terminal', handler)
   }, [])
-  // Cold-tab hydration: after a reload (or when restoring a slot's strip from
-  // the persisted panel-tabs store), file tabs come back as lightweight
-  // references with their heavy content stripped (content === undefined). Read
-  // it back declaratively with useQueries — one ['file-read', path] query per
-  // cold file tab (same key/shape as handleFileOpen so the cache dedupes).
-  // Once a tab's content is patched in it drops out of coldFileTabs and its
-  // query unsubscribes. Diff tabs are transient (not persisted — a restored
-  // diff can't reconstruct the original turn snapshot); artifact tabs
-  // self-hydrate via ArtifactPanel's own ['artifact', slug] query.
+  // Cold-tab hydration: restored file tabs are lightweight references whose
+  // content was stripped. Reads share `readFile`'s per-path ordering with chip
+  // clicks and the open panel's refresh, so an older hydration cannot overwrite
+  // newer bytes. Declarative queries are not used here because their independent
+  // fetch-to-cache write has no shared ticket with those other callers.
   const coldFileTabs = useMemo(
     () => tabsCtl.tabs.filter(t => t.kind === 'file' && t.path && t.content === undefined),
     [tabsCtl.tabs],
   )
-  const coldFileResults = useQueries({
-    queries: coldFileTabs.map(t => ({
-      queryKey: ['file-read', t.path!],
-      queryFn: async () => {
-        const res = await fetch(fileReadUrl(t.path!))
-        // Same contract as handleFileOpen: a 404 is a real answer and keeps its
-        // placeholder; any other failure is reported as an error, never as text.
-        const text = res.ok
-          ? await res.text()
-          : res.status === 404 ? i18nT('pages.chatPage.file_not_found_on_disk_it_may_have_been_moved_or')
-          : ''
-        return { text, ok: res.ok, status: res.status }
-      },
-      staleTime: 10_000,
-    })),
-  })
-  // Mirror settled reads into the tab strip. useQueries owns the fetch
-  // lifecycle (error/retry/dedupe); this effect only writes results back, and
-  // the content===undefined guard keeps it idempotent (a hydrated tab leaves
-  // coldFileTabs, so it isn't re-patched).
-  // Read failures already reported, by tab id. The effect below re-runs whenever
-  // ANY cold query settles, so without this a failure the user dismissed would
-  // come back each time an unrelated tab hydrated. Cleared when the tab's read
-  // succeeds, so a retry that fails again is reported again.
+  const coldReadControllersRef = useRef(new Map<string, AbortController>())
+  // Read failures already reported, by tab id. A tab remains cold on failure,
+  // and the flag clears after a successful retry.
   const reportedColdReadsRef = useRef(new Set<string>())
   useEffect(() => {
-    coldFileResults.forEach((r, i) => {
-      const t = coldFileTabs[i]
-      if (!t || t.content !== undefined) return
-      if (r.data && (r.data.ok || r.data.status === 404)) {
-        reportedColdReadsRef.current.delete(t.id)
-        tabsCtl.patchTab(t.id, { content: r.data.text, savedContent: r.data.text })
-      } else if ((r.data || r.isError) && !reportedColdReadsRef.current.has(t.id)) {
-        // The tab stays cold (its buffer untouched, so the next chip/tree click
-        // retries the read) and the failure is reported above the composer.
-        // Writing the error sentence into the tab made it look like the file's
-        // own text — and a clean, saveable one at that.
-        reportedColdReadsRef.current.add(t.id)
-        const reason = r.isError
-          ? (errMessage(r.error) || i18nT('pages.chatPage.unknown_error'))
-          : i18nT('pages.chatPage.http_status', { status: r.data!.status })
-        showActionError(i18nT('pages.chatPage.could_not_read_file_reason', { path: t.path!, reason }))
+    const coldIds = new Set(coldFileTabs.map(t => t.id))
+    for (const [id, controller] of coldReadControllersRef.current) {
+      if (!coldIds.has(id)) {
+        controller.abort()
+        coldReadControllersRef.current.delete(id)
       }
-    })
-  }, [coldFileResults, coldFileTabs, tabsCtl, showActionError])
+    }
+
+    for (const tab of coldFileTabs) {
+      if (coldReadControllersRef.current.has(tab.id)) continue
+      const controller = new AbortController()
+      coldReadControllersRef.current.set(tab.id, controller)
+      void readFile(tab.path!, controller.signal).then(r => {
+        if (coldReadControllersRef.current.get(tab.id) !== controller) return
+        if (r.kind === 'superseded') { coldReadControllersRef.current.delete(tab.id); return }
+        if (r.kind === 'ok' || r.status === 404) {
+          coldReadControllersRef.current.delete(tab.id)
+          reportedColdReadsRef.current.delete(tab.id)
+          const text = r.kind === 'ok'
+            ? r.text
+            : i18nT('pages.chatPage.file_not_found_on_disk_it_may_have_been_moved_or')
+          tabsCtl.patchTab(tab.id, {
+            content: text,
+            savedContent: text,
+            binary: r.kind === 'ok' && r.binary,
+          })
+          return
+        }
+        // A failed read keeps its slot: the tab stays cold and is NOT re-read
+        // on every strip change (that would be a retry storm against a file
+        // that is not there); the next chip / tree click is the retry.
+        if (reportedColdReadsRef.current.has(tab.id)) return
+        reportedColdReadsRef.current.add(tab.id)
+        const reason = r.status
+          ? i18nT('pages.chatPage.http_status', { status: r.status })
+          : errMessage(r.error) || i18nT('pages.chatPage.unknown_error')
+        showActionError(i18nT('pages.chatPage.could_not_read_file_reason', {
+          path: tab.path!,
+          reason,
+        }))
+      })
+    }
+  }, [coldFileTabs, tabsCtl, showActionError])
+  useEffect(() => () => {
+    for (const controller of coldReadControllersRef.current.values()) controller.abort()
+    coldReadControllersRef.current.clear()
+  }, [])
   // Session mode of the active slot. In the unified chat view the page-level
   // `mode` prop is always '' — the slot's own mode is the source of truth for
   // header identity (Autopilot icon + tooltip).

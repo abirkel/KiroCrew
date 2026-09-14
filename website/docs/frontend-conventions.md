@@ -317,6 +317,25 @@ Always React Query (`useQuery` / `useMutation`) for server state. Do NOT use
 manual `useState` + `useEffect` + `useCallback` for an API call. Prefer optimistic
 updates through `queryClient.setQueryData`.
 
+One deliberate exception: the side panel's file-tab **buffer** reads. Every read
+of a file into a panel tab — a chip / tree click (`openFile`), cold-tab hydration
+after a reload, and the open panel's own Refresh / Cancel / file-watch re-read —
+goes through `readFile` in `src/utils/fileReadQuery.ts`, and nothing else may
+fetch `/api/file-read` for a tab. Each read replaces the buffer AND the tab's
+"is this still text" verdict, so an older read landing after a newer one puts
+the editor back over bytes it cannot represent and a save then overwrites the
+newer file. `readFile` hands out a per-path ticket; a read that was overtaken
+before it resolved hands back the NEWEST read's outcome instead of its own
+bytes, so every surface that asked receives the same latest answer (a click that
+raced the panel's refresh still opens its tab, with the refresh's bytes). Only a
+read its caller withdrew — aborted on unmount or path change — answers
+`superseded`, which the caller applies as "do nothing, say nothing". React Query
+is excluded from this path on purpose: its own fetch-to-cache write is a second
+writer the ticket order cannot see, and there is no `['file-read', path]` entry
+to hydrate a tab from. The cost is one extra GET when a file is reopened within
+a few seconds. Path probes (`usePathKind`, `DiffBlock`'s HEAD check) are not
+buffer reads and are unaffected.
+
 Query keys are arrays whose first element names the resource, kebab-case:
 `['mcp-servers']`, `['agents-installed']`, `['agent-detail', name]`. Append the
 parameters a fetch varies on, so a stale entry cannot serve a different subject.

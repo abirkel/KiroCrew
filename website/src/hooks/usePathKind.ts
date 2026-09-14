@@ -39,8 +39,8 @@ const MAX_CACHE = 500
  * existing mid-conversation, and re-probing on every re-render of a long
  * transcript is the cost this cache exists to avoid. `missing` is the verdict
  * that legitimately flips — the agent writes the file a moment after mentioning
- * it — so caching it forever would leave the chip permanently inert. Matches the
- * 10s `staleTime` the dashboard already uses for `['file-read', path]`.
+ * it — so caching it forever would leave the chip permanently inert. Ten
+ * seconds lets a new file appear quickly without probing on every render.
  */
 const MISSING_TTL_MS = 10_000
 

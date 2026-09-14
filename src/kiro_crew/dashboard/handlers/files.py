@@ -2520,6 +2520,13 @@ class _TextRead(NamedTuple):
     content: str
 
 
+#: How much of a file the binary sniff reads before deciding, in BYTES. 8 KiB is
+#: the window the Files app already uses (``_is_binary_file`` in
+#: ``apps/builtins/file_explorer/server.py``); the two surfaces disagreeing about
+#: what "binary" means is a worse outcome than either window being wrong.
+_FILE_READ_SNIFF_BYTES = 8192
+
+
 def _read_request_path(raw: str, read_cap: int) -> _TextRead:
     """Validate, no-follow open and read a request path in ONE transaction.
 
@@ -2572,6 +2579,19 @@ def _read_request_path(raw: str, read_cap: int) -> _TextRead:
         # transaction), read_failed, file_too_large: the read did not happen.
         return _TextRead("read_failed", checked.path, "")
     try:
+        # Sniff BEFORE the decode. The decode below is deliberately lossy
+        # (``errors="replace"``), which is right for a text file with one bad
+        # byte and actively wrong for a .zip or a .sqlite: every undecodable
+        # byte becomes U+FFFD, which is a screenful of mojibake in the panel's
+        # code editor rather than a readable file. The sniff -- not an extension
+        # list -- is the source of truth, so an extension-less binary is caught
+        # too.
+        head = checked.file.read(_FILE_READ_SNIFF_BYTES)
+        if b"\x00" in head:
+            with contextlib.suppress(Exception):
+                checked.file.close()
+            return _TextRead("binary", checked.path, "")
+        checked.file.seek(0)
         with io.TextIOWrapper(checked.file, encoding="utf-8", errors="replace") as text:
             return _TextRead("file", checked.path, text.read(read_cap))
     except OSError:
@@ -2788,6 +2808,20 @@ async def api_file_read(request: web.Request) -> web.Response:
     try:
         if outcome.kind == "read_failed":
             raise OSError(f"file_read could not read {path}")
+        if outcome.kind == "binary":
+            _sel().log_tool_invocation(
+                session_key="dashboard", tool_name="file_read", outcome="success", resources=path
+            )
+            # Empty content rather than decoded garbage, and the verdict as a
+            # HEADER as well as a body field: a .json TEXT file is served as
+            # ``application/json`` too, so the content type cannot tell this
+            # envelope apart from a file whose own body is JSON. The header and
+            # the empty body are the whole contract -- the panel's card names
+            # the file by its path and offers the download, nothing more.
+            return web.json_response(
+                {"binary": True, "content": ""},
+                headers={"X-File-Binary": "true"},
+            )
         content = outcome.content
         truncated = len(content) > read_cap
         content = content[:read_cap]

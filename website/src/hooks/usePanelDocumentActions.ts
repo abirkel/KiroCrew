@@ -1,11 +1,11 @@
 import { useCallback } from 'react'
-import type { QueryClient } from '@tanstack/react-query'
+import { type QueryClient } from '@tanstack/react-query'
 
 import { api } from '../api/client'
 import { clearInlineDraft, getInlineDraft, type usePanelTabs } from './usePanelTabs'
 import { i18nT } from '../i18n/t'
 import type { Artifact } from '../types'
-import { fileReadUrl } from '../utils/fileReadUrl'
+import { readFile } from '../utils/fileReadQuery'
 import { errMessage } from '../utils/thunkError'
 import { optsForReplace } from '../pages/chat/replaceGuard'
 
@@ -40,11 +40,10 @@ export interface PanelDocumentActionsOptions {
  * surfaces were exactly such copies of chat infrastructure).
  */
 export function usePanelDocumentActions({ tabsCtl, slotRef, queryClient, showActionError, onOpened }: PanelDocumentActionsOptions) {
-  // Open a file as a panel tab. Its content is fetched through React Query so
-  // repeated opens within 10s hit the cache. A 404 (file not on disk) renders a
-  // placeholder tab; any other failure is REPORTED rather than shown as the
-  // file's text. Bypassed entirely when the IntelliJ plugin handles file opens
-  // — the user wanted IDE-native, not in-dashboard.
+  // Open a file as a panel tab. Its content is read through the arbitrated
+  // `readFile`, so a click cannot land older bytes after a newer refresh,
+  // hydration or click already served the path. A 404 renders a placeholder;
+  // any other failure is reported instead of shown as the file's text.
   const openFile = useCallback(async (filePath: string, opts?: { replaceId?: string; line?: number; endLine?: number; diffMode?: boolean; canReplace?: () => boolean }) => {
     try { window.dispatchEvent(new CustomEvent('kirocrew-file-open', { detail: { path: filePath } })) } catch { /* ignore */ }
     if ((window as unknown as { __kirocrewPluginHandlesFiles?: boolean }).__kirocrewPluginHandlesFiles) return
@@ -55,38 +54,34 @@ export function usePanelDocumentActions({ tabsCtl, slotRef, queryClient, showAct
     // switched to mid-load.
     const slot = slotRef.current ?? null
     try {
-      const [{ text, ok, status }] = await Promise.all([
-        queryClient.fetchQuery({
-          queryKey: ['file-read', filePath],
-          queryFn: async () => {
-            const url = fileReadUrl(filePath)
-            const res = await fetch(url)
-            // A 404 is a real answer about the file (it is not on disk), so the
-            // panel shows that placeholder. Any other failure is an ERROR: it is
-            // reported as one below instead of being rendered as the file's text.
-            const text = res.ok
-              ? await res.text()
-              : res.status === 404 ? i18nT('pages.chatPage.file_not_found_on_disk_it_may_have_been_moved_or')
-              : ''
-            return { text, ok: res.ok, status: res.status }
-          },
-          staleTime: 10_000,
-        }),
-        queryClient.prefetchQuery({
-          queryKey: ['file-diff', filePath],
-          queryFn: () => api.fileDiff(filePath),
-        }),
-      ])
-      if (!ok && status !== 404) {
-        // Read failure — nothing in the viewer to lose, so the notice hands off.
-        showActionError(i18nT('pages.chatPage.could_not_read_file_reason', { path: filePath, reason: i18nT('pages.chatPage.http_status', { status }) }))
+      void queryClient.prefetchQuery({
+        queryKey: ['file-diff', filePath],
+        queryFn: () => api.fileDiff(filePath),
+      }).catch(() => { /* best-effort prefetch */ })
+      const r = await readFile(filePath)
+      // The ticket order protects this result only until readFile resolves, so
+      // apply it without awaiting unrelated work.
+      if (r.kind === 'superseded') return
+      if (r.kind === 'failed' && r.status !== 404) {
+        const reason = r.status
+          ? i18nT('pages.chatPage.http_status', { status: r.status })
+          : errMessage(r.error) || i18nT('pages.chatPage.unknown_error')
+        showActionError(i18nT('pages.chatPage.could_not_read_file_reason', { path: filePath, reason }))
         return
       }
-      tabsCtl.openFile(filePath, text, slot, optsForReplace(opts))
+      // A 404 is a real answer about the file, so this surface opens a
+      // placeholder. Refresh callers report the same status instead.
+      const text = r.kind === 'ok'
+        ? r.text
+        : i18nT('pages.chatPage.file_not_found_on_disk_it_may_have_been_moved_or')
+      tabsCtl.openFile(filePath, text, slot, {
+        ...optsForReplace(opts),
+        binary: r.kind === 'ok' && r.binary,
+      })
       onOpened?.()
     } catch (e) {
-      // The read itself threw (network, aborted). Reported above the composer
-      // rather than as a tab whose "content" is the error sentence.
+      // Unexpected failures from the diff prefetch or surrounding work are
+      // reported rather than rendered as a tab's content.
       showActionError(i18nT('pages.chatPage.could_not_read_file_reason', { path: filePath, reason: errMessage(e) || i18nT('pages.chatPage.unknown_error') }))
     }
   }, [queryClient, tabsCtl, slotRef, showActionError, onOpened])
