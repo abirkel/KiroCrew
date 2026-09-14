@@ -44,8 +44,10 @@ from kiro_crew.agent import (
 )
 from kiro_crew.agent_capabilities import CapabilityError, require_unmanaged_template
 from kiro_crew.agent_discovery import (
+    AgentInfo,
     _read_agent_spec,
     clear_list_agents_cache,
+    installed_app_names,
     list_agents,
     project_agent_names,
     spec_model,
@@ -60,6 +62,7 @@ from kiro_crew.apps.manager import (
     INSTALLED_META_FILENAME,
     app_dir,
     app_enabled_state,
+    app_lifecycle_in_progress,
     apps_dir,
 )
 from kiro_crew.atomic_write import replace_with_retry
@@ -154,6 +157,20 @@ from kiro_crew.validation import _AGENT_NAME_RE
 _MODEL_LIST_STDERR_TAIL_CHARS = 1000
 
 logger = logging.getLogger(__name__)
+
+
+def _app_agent_file_present(kiro_agent: object) -> bool:
+    """Whether an app row's agent definition is on disk RIGHT NOW, under either
+    name it can wear: the bare ``<name>.json`` or the materialized
+    ``<app>--<name>.json`` whose declared ``name`` is the row's binding (the
+    form the app bridge writes -- an app row's ``kiro_agent`` is the DECLARED
+    name, not the file stem, so a bare-name check alone would report every app
+    agent missing)."""
+    if not isinstance(kiro_agent, str) or not kiro_agent or not _AGENT_NAME_RE.match(kiro_agent):
+        return False
+    return (
+        kiro_agents_dir_path() / f"{kiro_agent}.json"
+    ).is_file() or _namespaced_agent_file_exists(kiro_agent)
 
 
 def _namespaced_agent_file_exists(agent_name: str) -> bool:
@@ -4134,10 +4151,32 @@ async def _do_agents_sync(request: web.Request) -> web.Response:
     prune_candidates: dict[str, dict] = {}
     prior_stores: dict[str, str] = {}
     try:
-        discovered_agents = await asyncio.get_running_loop().run_in_executor(
-            discovery_executor(), lambda: list(list_agents())
+
+        def _discover() -> tuple[list[AgentInfo], bool]:
+            # Both off the loop, in one hop: the listing, and whether the apps
+            # directory answered -- ``None`` is a read FAILURE, not "no apps",
+            # and the two must be told apart before any app row is pruned.
+            listed = list(list_agents())
+            return listed, installed_app_names() is None
+
+        discovered_agents, apps_unreadable = await asyncio.get_running_loop().run_in_executor(
+            discovery_executor(), _discover
         )
         discovered_names = {a.name for a in discovered_agents}
+        # The names an installed app's files answer to, kept apart: an "app"
+        # row is retained only by a same-name discovery that is ITSELF an
+        # app's file. A local or package agent that happens to share the
+        # name would otherwise keep the row alive after the app is disabled
+        # -- and the row would dispatch that unrelated definition.
+        # A name the listing's dedup gave to a different source (an
+        # earlier-sorting package file over the app's own) is AMBIGUOUS, not
+        # evidence the app stopped shipping it: the dropped app file left its
+        # provenance on the kept entry (``shadowed_sources``), and the app row
+        # is kept -- pruning it would archive a live member's memory over a
+        # filename collision.
+        discovered_app_names = {
+            a.name for a in discovered_agents if a.source == "app" or "app" in a.shadowed_sources
+        }
 
         # Add new agents
         mc_kiro_agents = {a.kiro_agent for a in cfg.agents.values()}
@@ -4215,20 +4254,54 @@ async def _do_agents_sync(request: web.Request) -> web.Response:
                 synced.append(disc.name)
 
         # Prune agents whose kiro_agent file no longer exists on disk.
-        # Only prune package-installed agents (never user-created or kirocrew-owned).
-        # Skip pruning if scan returned nothing -- likely a transient issue.
+        # Only prune agents the sync itself registered from an installed package
+        # or app (never user-created or kirocrew-owned). Skip pruning if scan
+        # returned nothing -- likely a transient issue.
         # Invariant: for package-sourced entries, kiro_agent == dict key == agent name.
-        # ("aim" is also accepted for backward-compat with older configs.)
+        # ("aim" is also accepted for backward-compat with older configs.) An
+        # app's agents are registered as "app" (the discovery names the
+        # installed app that ships the file); disabling or removing the app
+        # deletes the materialized file, and a row left behind would dispatch
+        # to a definition that is gone -- so it is pruned like a package's,
+        # and only a discovery that is itself an app's file keeps it.
         # A STARRED package crew is pruned like any other -- a registry row with
         # no spec on disk is not spawnable. The star goes with the row: a
         # reinstalled crew comes back un-starred and one click restores it
         # (deliberately no parking list -- a permanent config key is not worth
         # a re-click, and a name-keyed list would pre-star an unrelated future
         # package that reused the name).
+        if apps_unreadable:
+            # An unreadable apps directory is not an empty one: every app row
+            # would read as "its app is gone" and be pruned with its memory
+            # archived. App rows are left exactly as they are until the
+            # directory reads again; package rows are decided as usual.
+            logger.warning(
+                "agents sync: the apps directory could not be read; app members are "
+                "kept until it can"
+            )
+        # An app's materialized files are in transit while its lifecycle lock
+        # is held (an update deregisters them and registers them again under
+        # one hold), so a scan that ran alongside one saw absences that mean
+        # nothing. This sync cannot take that lock -- it holds the config
+        # lock, which the lifecycle routes take INSIDE theirs -- so it asks
+        # whether one is held and, if so, leaves every app row for the next
+        # sync. Package rows are decided as usual.
+        apps_in_transit = app_lifecycle_in_progress()
+        if apps_in_transit:
+            logger.info(
+                "agents sync: an app lifecycle operation is in progress; app members are "
+                "reconsidered on the next sync"
+            )
+        keep_app_rows = apps_unreadable or apps_in_transit
         if discovered_names:
             for name, agent_cfg in list(cfg.agents.items()):
-                if agent_cfg.source in ("package", "aim") and (
-                    agent_cfg.kiro_agent not in discovered_names
+                if agent_cfg.source == "app" and keep_app_rows:
+                    continue
+                still_shipped = (
+                    discovered_app_names if agent_cfg.source == "app" else discovered_names
+                )
+                if agent_cfg.source in ("package", "aim", "app") and (
+                    agent_cfg.kiro_agent not in still_shipped
                 ):
                     # Record the SNAPSHOT entry: the locked mutate below only
                     # prunes a name whose in-lock entry still equals this one,
@@ -4282,10 +4355,13 @@ async def _do_agents_sync(request: web.Request) -> web.Response:
                 for n in to_add
             }
 
-            def _write_sync() -> list[str]:
+            def _write_sync() -> tuple[list[str], list[str]]:
                 retired_stores: list[str] = []
                 created_archives: list[tuple[str, str]] = []
                 skipped_allocations: list[tuple[str, str]] = []
+                # Snapshot prune candidates the locked read overruled: they
+                # stay, and the answer must not report them pruned.
+                kept_back: list[str] = []
 
                 def _mutate(doc: dict) -> dict | None:
                     agents = coerce_dict_section(doc, "agents")
@@ -4311,20 +4387,30 @@ async def _do_agents_sync(request: web.Request) -> web.Response:
                     # snapshot and this lock hold is newer evidence than the
                     # stale discovered_names and must survive.
                     for aname, snap_entry in prune_candidates.items():
-                        if agents.get(aname) == snap_entry:
-                            store_name = snap_entry.get("memory_store", "")
-                            record = stores.get(store_name)
-                            if isinstance(record, dict) and record.get("memory_version") == 2:
-                                owner = record.get("owner_member")
-                                if owner != aname:
-                                    raise UnknownMemoryStore(
-                                        f"memory store {store_name!r} ownership changed concurrently"
-                                    )
-                                if archive_member_memory_store(store_name, aname):
-                                    created_archives.append((store_name, aname))
-                                retired_stores.append(store_name)
-                            del agents[aname]
-                            changed = True
+                        if agents.get(aname) != snap_entry:
+                            kept_back.append(aname)
+                            continue
+                        if snap_entry.get("source") == "app" and _app_agent_file_present(
+                            snap_entry.get("kiro_agent")
+                        ):
+                            # The app's file is back (a lifecycle operation
+                            # that began after the check above finished
+                            # registering it): the row is live, not stale.
+                            kept_back.append(aname)
+                            continue
+                        store_name = snap_entry.get("memory_store", "")
+                        record = stores.get(store_name)
+                        if isinstance(record, dict) and record.get("memory_version") == 2:
+                            owner = record.get("owner_member")
+                            if owner != aname:
+                                raise UnknownMemoryStore(
+                                    f"memory store {store_name!r} ownership changed concurrently"
+                                )
+                            if archive_member_memory_store(store_name, aname):
+                                created_archives.append((store_name, aname))
+                            retired_stores.append(store_name)
+                        del agents[aname]
+                        changed = True
                     return doc if changed else None
 
                 with memory_store_namespace_lock():
@@ -4345,9 +4431,11 @@ async def _do_agents_sync(request: web.Request) -> web.Response:
                     retire_unpublished_member_memory_store(store_name, owner)
                 for store_name in retired_stores:
                     release_cached_memory_store(store_name)
-                return retired_stores
+                return retired_stores, kept_back
 
-            retired_stores = await _drained_to_thread(_write_sync)
+            retired_stores, kept_back = await _drained_to_thread(_write_sync)
+            if kept_back:
+                pruned = [n for n in pruned if n not in kept_back]
             if (state := request.app.get("state")) is not None:
                 for store_name in retired_stores:
                     await release_markdown_memory_store(state, store_name)
