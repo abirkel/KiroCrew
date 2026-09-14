@@ -36,7 +36,9 @@ import {
   Loader2,
   MoreHorizontal,
   Pencil,
+  TextCursorInput,
   Play,
+  Cloud,
 } from 'lucide-react'
 import {
   api,
@@ -48,6 +50,7 @@ import {
   type CloudCoords,
   type RemoteProvisioner,
 } from '../../api/client'
+import { BUILTIN_PROVISIONER_ID, DEFAULT_WARM_SET_CAP } from '../../utils/remoteCrew'
 import { Card, Btn, Badge, IconButton } from '../../components/ui'
 import { SettingsToggle } from '../../components/settings'
 import {
@@ -85,6 +88,18 @@ import {
 /** A launch job the user is still waiting on (not yet a switchable crew). */
 const IN_PROGRESS: LaunchJob['status'][] = ['pending', 'running', 'awaiting_signin']
 const isInProgress = (j: LaunchJob) => IN_PROGRESS.includes(j.status)
+
+const connectionTypeLabel = (inst: InstanceView): string =>
+  inst.connection_method === 'ssm'
+    ? i18nT('pages.settings.remoteCrewPanel.type_ssm')
+    : i18nT('pages.settings.remoteCrewPanel.type_ssh')
+
+// The badges compress to acronyms (EC2 / SSM / SSH) a first-time reader may
+// not know; the hover title spells out what each one means.
+const connectionTypeHint = (inst: InstanceView): string =>
+  inst.connection_method === 'ssm'
+    ? i18nT('pages.settings.remoteCrewPanel.transport_hint_ssm')
+    : i18nT('pages.settings.remoteCrewPanel.transport_hint_ssh')
 
 /** Remembered across navigation — see the state declarations for why. */
 const CLOUD_PROFILE_KEY = 'mc-cloud-profile'
@@ -281,6 +296,7 @@ function CrewRow({
   onDelete,
   onRequestDelete,
   onRequestRemove,
+  onRename,
   onEdit,
   onEditSaved,
   editDraft,
@@ -289,6 +305,7 @@ function CrewRow({
   editDraftSeq,
   onEditRebase,
   editing,
+  renaming,
   blocked,
 }: {
   inst: InstanceView
@@ -306,6 +323,8 @@ function CrewRow({
   onDelete: (tag: string, coords: CloudCoords) => void
   onRequestDelete: (tag: string | null) => void
   onRequestRemove: (id: string | null) => void
+  /** Returns whether the form opened; a refused Rename leaves focus to the menu. */
+  onRename: (id: string) => boolean
   onEdit: (id: string | null) => void
   onEditSaved: (updated: InstanceView) => void
   /** Unsaved work for THIS crew, held by the panel so it survives unmount. */
@@ -317,19 +336,28 @@ function CrewRow({
   editDraftSeq: number
   onEditRebase: () => void
   editing: boolean
+  renaming: boolean
   /** This row's Edit was refused because another row holds unsaved changes. */
   blocked: boolean
 }) {
   const connected = inst.status.state === 'connected'
   const isCloud = cloudTag !== null
-  // An SSM machine with no matching launch job is NOT necessarily hand-added: the CLI
-  // launcher registers real cloud crews the same way, and those never produce a launch
-  // job in this gateway's store. Calling them "added by you" and offering the plain
-  // one-click Remove would unregister a live, billing instance and take away the only
-  // place the dashboard could still delete it. We cannot prove which it is, so treat it
-  // as possibly-cloud: same confirm step, and copy that says what Remove does and does
-  // not do.
-  const unverifiedCloud = !isCloud && inst.connection_method === 'ssm' && !!inst.ssm_target
+  // Rename puts focus in the form's Name field as it mounts. Radix restores
+  // focus to the menu trigger when the menu closes, and that restore is
+  // deferred, so it lands AFTER the field autofocused and takes the caret back.
+  // Skip the restore for that one item; the form already owns focus.
+  const renameChosenRef = useRef(false)
+  // Two persisted signals mark a row possibly-cloud when no launch job matches: an
+  // EC2 stamp (`provisioner_id`), and an SSM target — the CLI launcher registers real
+  // cloud crews the same way, and those never produce a launch job in this gateway's
+  // store. Calling either "added by you" would invite a Remove that unregisters a
+  // live, billing instance and takes away the only place the dashboard could still
+  // delete it. We cannot prove which it is, so treat it as possibly-cloud: same
+  // confirm step, and copy that says what Remove does and does not do.
+  const unverifiedCloud =
+    !isCloud &&
+    (inst.provisioner_id === BUILTIN_PROVISIONER_ID ||
+      (inst.connection_method === 'ssm' && !!inst.ssm_target))
   // A stop/start this row asked for is still in flight.
   const lifecycleBusy = busy === `stop:${cloudTag}` || busy === `start:${cloudTag}`
   // States that occupy the row's second control slot with an inline button.
@@ -346,7 +374,20 @@ function CrewRow({
         <div className="min-w-0">
           <div className="text-text-strong text-sm font-medium truncate">{inst.name}</div>
           <div className="text-[12px] text-muted truncate">
-            <span className="uppercase tracking-wide text-muted-strong">{inst.connection_method === 'ssm' ? 'SSM' : 'SSH'}</span>{' '}
+            {(inst.provisioner_id === BUILTIN_PROVISIONER_ID || isCloud) && (
+              <Badge
+                variant="aim"
+                className="mr-1"
+                title={i18nT('pages.settings.remoteCrewPanel.source_ec2_hint')}
+                aria-label={i18nT('pages.settings.remoteCrewPanel.source_ec2_hint')}
+              >
+                <Cloud className="lucide-inline" />
+                {i18nT('pages.settings.remoteCrewPanel.source_ec2')}
+              </Badge>
+            )}
+            <Badge variant="muted" className="mr-1" title={connectionTypeHint(inst)}>
+              {connectionTypeLabel(inst)}
+            </Badge>
             {target}
             {inst.connection_method === 'ssm' && inst.aws_region ? ` (${inst.aws_region})` : ''} {i18nT('pages.settings.instancesPanel.port_2')} {inst.remote_port}
           </div>
@@ -438,7 +479,21 @@ function CrewRow({
               <MoreHorizontal className="lucide-inline" />
             </IconButton>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[200px]">
+          <DropdownMenuContent
+            align="end"
+            className="min-w-[200px]"
+            onCloseAutoFocus={e => {
+              if (!renameChosenRef.current) return
+              e.preventDefault()
+              renameChosenRef.current = false
+            }}
+          >
+            <DropdownMenuItem
+              className="gap-2 text-[13px]"
+              onSelect={() => { renameChosenRef.current = onRename(inst.id) }}
+            >
+              <TextCursorInput className="lucide-inline" /> {i18nT('pages.settings.remoteCrewPanel.rename')}
+            </DropdownMenuItem>
             <DropdownMenuItem
               className="gap-2 text-[13px]"
               onSelect={() => onDiagnose(inst.id)}
@@ -508,7 +563,7 @@ function CrewRow({
     )}
     {editing && (
       <EditInstanceForm
-        key={`edit-${inst.id}-${editDraftSeq}`}
+        key={`edit-${inst.id}-${editDraftSeq}-${renaming ? 'rename' : 'settings'}`}
         inst={inst}
         onSaved={onEditSaved}
         onCancel={() => onEdit(null)}
@@ -516,6 +571,7 @@ function CrewRow({
         externallyChanged={editExternallyChanged}
         onDraftChange={onEditDraftChange}
         onRebase={onEditRebase}
+        renameIntent={renaming}
         // Only a CORRELATED cloud crew is addressed by its connection identity:
         // Stop / Start / Delete resolve the machine through {profile, region,
         // ssm_target}, so editing those would leave a billing instance the
@@ -747,6 +803,9 @@ export function RemoteCrewPanel() {
   // Only one crew is editable at a time: two open forms on the same list would
   // let the user save conflicting ports without ever seeing the clash.
   const [editingId, setEditingId] = useState<string | null>(null)
+  // Rename is an entry intent, not a second form or persisted draft shape.
+  // A route remount safely restores an unsaved draft as a regular edit.
+  const [renameId, setRenameId] = useState<string | null>(null)
   // Unsaved work in the open form. Swapping rows would unmount it and lose typed
   // host/port corrections silently, so the swap is refused instead.
   // The unsaved edit itself, keyed by crew — NOT a boolean. The form unmounts
@@ -759,7 +818,6 @@ export function RemoteCrewPanel() {
   // `seq` counts REBASES, and is used as the form's React key: adopting the current
   // record rewrites the draft's values, and a mounted form cannot re-seed itself.
   const editDraft = useAppSelector(s => s.instances.crewForms?.edit ?? null)
-  const editDirty = editDraft !== null
   // Which row's Edit was refused, not a bare flag: the refusal has to render at
   // the row the user actually clicked. Shown once at the bottom of the Card it
   // could sit off-screen in a long crew list, so the click looked like a no-op.
@@ -939,7 +997,7 @@ export function RemoteCrewPanel() {
   })
 
   const instances = useMemo(() => instancesQuery.data?.instances ?? [], [instancesQuery.data])
-  const warmCap = instancesQuery.data?.warm_set_cap || 5
+  const warmCap = instancesQuery.data?.warm_set_cap || DEFAULT_WARM_SET_CAP
 
   // A draft outlives its form ON PURPOSE, which means it can also outlive the CREW
   // it belongs to: Remove a crew mid-edit and the draft stays keyed by that id, so
@@ -973,6 +1031,7 @@ export function RemoteCrewPanel() {
     if (!instancesQuery.isSuccess) return
     const live = new Set(instances.map(i => i.id))
     if (editingId !== null && !live.has(editingId)) setEditingId(null)
+    setRenameId(prev => (prev !== null && !live.has(prev) ? null : prev))
     if (editDraft !== null && !live.has(editDraft.id)) dispatch(setCrewEditForm(null))
     setEditBlockedId(prev => (prev !== null && !live.has(prev) ? null : prev))
   }, [instances, instancesQuery.isSuccess, editingId, editDraft, dispatch])
@@ -1001,7 +1060,7 @@ export function RemoteCrewPanel() {
   const cloudTagByInstanceId = useMemo(() => {
     const m = new Map<string, string>()
     for (const j of launches) {
-      if (j.instance_id && (j.provider_id ?? 'aws_ec2') === 'aws_ec2') m.set(j.instance_id, j.tag)
+      if (j.instance_id && (j.provider_id ?? BUILTIN_PROVISIONER_ID) === BUILTIN_PROVISIONER_ID) m.set(j.instance_id, j.tag)
     }
     return m
   }, [launches])
@@ -1259,7 +1318,7 @@ export function RemoteCrewPanel() {
         type="button"
         onClick={() => setTab('setup')}
         aria-label={i18nT('pages.settings.remoteCrewPanel.set_up_a_new_one')}
-        className={`px-3.5 py-2 text-[13px] font-semibold -mb-px border-b-2 transition-colors flex items-center gap-2 ${tab === 'setup' ? 'text-text-strong border-accent' : 'text-muted border-transparent hover:text-text'}`}
+        className={`px-3.5 py-2 text-[13px] font-semibold -mb-px border-b-2 transition-colors flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50 ${tab === 'setup' ? 'text-text-strong border-accent' : 'text-muted border-transparent hover:text-text'}`}
       >
         <Rocket size={14} /> {i18nT('pages.settings.remoteCrewPanel.set_up_a_new_one')}
         {inProgress.length > 0 && <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-hidden />}
@@ -1368,9 +1427,26 @@ export function RemoteCrewPanel() {
                     onRequestDelete={tag => setConfirmDeleteTag(tag)}
                     onRequestRemove={id => setConfirmRemoveId(id)}
                     editing={editingId === inst.id}
+                    renaming={renameId === inst.id}
                     blocked={editBlockedId === inst.id}
+                    onRename={id => {
+                      if (editDraft !== null && id !== editDraft.id) {
+                        setEditBlockedId(id)
+                        return false
+                      }
+                      setEditBlockedId(null)
+                      setRenameId(id)
+                      setEditingId(id)
+                      return true
+                    }}
                     onEdit={id => {
-                      if (id !== null && editingId !== null && id !== editingId && editDirty) {
+                      // Edit settings and Cancel clear the transient Rename intent.
+                      // Switching rows would still unmount another crew's draft.
+                      if (
+                        id !== null
+                        && editDraft !== null
+                        && id !== editDraft.id
+                      ) {
                         setEditBlockedId(id)
                         return
                       }
@@ -1378,6 +1454,7 @@ export function RemoteCrewPanel() {
                       // Cancel (id === null) is the user CHOOSING to discard; the draft
                       // goes with it. Every other way the form disappears keeps it.
                       if (id === null) dispatch(setCrewEditForm(null))
+                      setRenameId(null)
                       setEditingId(id)
                     }}
                     editDraft={editDraft?.id === inst.id ? editDraft.draft : null}
@@ -1409,16 +1486,21 @@ export function RemoteCrewPanel() {
                       const next =
                         draft === null
                           ? null
-                          : { id: inst.id, draft, seq: editDraft?.id === inst.id ? editDraft.seq : 0 }
+                          : {
+                              id: inst.id, draft,
+                              seq: editDraft?.id === inst.id ? editDraft.seq : 0,
+                            }
                       // Same values, same action: the report fires on every keystroke,
                       // and dispatching an equal-but-new object re-renders for nothing.
                       if (JSON.stringify(editDraft) === JSON.stringify(next)) return
+                      if (next === null) setEditBlockedId(null)
                       dispatch(setCrewEditForm(next))
                     }}
                     // Clearing editingId without clearing the refusal left the UI
                     // instructing the user about a form that no longer exists.
                     onEditSaved={updated => {
                       setEditingId(null)
+                      setRenameId(null)
                       dispatch(setCrewEditForm(null))
                       setEditBlockedId(null)
                       // A warm pane is an iframe pointed at the OLD local port with the

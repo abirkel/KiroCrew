@@ -253,6 +253,7 @@ export function EditInstanceForm({
   onDraftChange,
   onRebase,
   lockTransport = false,
+  renameIntent = false,
 }: {
   inst: InstanceView
   /**
@@ -301,6 +302,8 @@ export function EditInstanceForm({
    * keeps billing — and Remove would then unregister it silently.
    */
   lockTransport?: boolean
+  /** Rename shares this form, but names the user's immediate task. */
+  renameIntent?: boolean
 }) {
   // Everything the form measures itself against comes from ONE snapshot: the
   // record it was opened on, restored with the draft when it remounts. Seeding
@@ -338,37 +341,52 @@ export function EditInstanceForm({
       form.dirty ? { values: form.values, baseline: baselineRef.current } : null,
     )
   }, [form.dirty, form.values])
+  const saveAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => {
+    saveAbortRef.current?.abort()
+    saveAbortRef.current = null
+  }, [])
   const saveMutation = useMutation({
-    mutationFn: () =>
-      api.updateInstance(
+    mutationFn: () => {
+      const controller = new AbortController()
+      saveAbortRef.current = controller
+      return api.updateInstance(
         inst.id,
         form.patch(baselineRef.current, { omitIdentity: lockTransport }),
-      ),
-    onSuccess: updated => onSaved(updated),
+        { signal: controller.signal },
+      )
+    },
+    onSuccess: onSaved,
   })
-  // Only meaningful once there is something to lose: a clean form has no typed
-  // values to protect, and re-seeding it silently is correct.
+  const savePending = saveMutation.isPending
   const stale = !!externallyChanged?.length && form.dirty
   const err = saveMutation.error
     ? saveMutation.error instanceof ApiError
       ? saveMutation.error.message
       : i18nT('pages.settings.remoteCrewPanel.failed_to_save_crew')
     : ''
+  const formLabel = i18nT(
+    renameIntent ? 'pages.settings.remoteCrewPanel.rename_crew' : 'pages.settings.remoteCrewPanel.edit_crew',
+    { name: inst.name },
+  )
   return (
     <div
       className="mt-3 rounded-md border border-border bg-bg-elevated p-3"
       role="group"
-      aria-label={i18nT('pages.settings.remoteCrewPanel.edit_crew', { name: inst.name })}
+      aria-label={formLabel}
     >
       <div className="flex items-center gap-2 mb-3 text-text font-medium text-sm">
         <Pencil className="lucide-inline" />{' '}
-        {i18nT('pages.settings.remoteCrewPanel.edit_crew', { name: inst.name })}
+        {formLabel}
       </div>
-      <InstanceFormFields
-        idPrefix={`edit-instance-${inst.id}`}
-        form={form}
-        lockTransport={lockTransport}
-      />
+      <fieldset disabled={savePending} className="contents min-w-0 border-0 p-0 m-0">
+        <InstanceFormFields
+          idPrefix={`edit-instance-${inst.id}`}
+          form={form}
+          lockTransport={lockTransport}
+          nameOnly={renameIntent}
+        />
+      </fieldset>
       {lockTransport && (
         <p className="mt-2 text-[12px] text-warn">
           {i18nT('pages.settings.remoteCrewPanel.transport_locked_note')}
@@ -403,21 +421,21 @@ export function EditInstanceForm({
             case (someone edited this same crew from the CLI) to guard the rarer
             one (the crew was replaced under its id). */}
         {stale ? (
-          <Btn primary onClick={onRebase} disabled={saveMutation.isPending}>
+          <Btn primary onClick={onRebase} disabled={savePending}>
             {i18nT('pages.settings.remoteCrewPanel.use_my_edits_anyway')}
           </Btn>
         ) : (
         <Btn
           primary
           onClick={() => saveMutation.mutate()}
-          disabled={saveMutation.isPending || !form.valid}
+          disabled={savePending || !form.valid}
         >
-          {saveMutation.isPending
+          {savePending
             ? i18nT('pages.settings.remoteCrewPanel.saving')
             : i18nT('pages.settings.remoteCrewPanel.save_changes')}
         </Btn>
         )}
-        <Btn onClick={onCancel} disabled={saveMutation.isPending}>
+        <Btn onClick={onCancel} disabled={savePending}>
           {i18nT('pages.settings.remoteCrewPanel.cancel')}
         </Btn>
       </div>
@@ -426,7 +444,10 @@ export function EditInstanceForm({
 }
 
 const inputCls =
-  'bg-bg-elevated border border-border rounded-md px-3 py-2 text-text text-sm outline-none focus-ring'
+  // `disabled:` variants, not a conditional class: the pending-save freeze is
+  // applied by the ancestor <fieldset disabled>, which the class string never
+  // sees — only the native :disabled pseudo-class observes it.
+  'bg-bg-elevated border border-border rounded-md px-3 py-2 text-text text-sm outline-none focus-ring disabled:opacity-60 disabled:cursor-not-allowed'
 // A frozen field must LOOK frozen: identical styling invites the user to click in,
 // type, and discover only from the note below the grid that nothing landed.
 const readOnlyCls = `${inputCls} opacity-60 cursor-not-allowed`
@@ -435,19 +456,34 @@ export function InstanceFormFields({
   idPrefix,
   form,
   lockTransport = false,
+  nameOnly = false,
 }: {
   idPrefix: string
   form: InstanceFormState
   /** Render the machine-identity fields read-only (see EditInstanceForm). */
   lockTransport?: boolean
+  /**
+   * Rename mode: only the Name field is editable, and it takes focus. Every
+   * other field sits read-only behind a collapsed disclosure — a restored
+   * draft can carry edits beyond the name, and opening the disclosure shows
+   * what a save would send.
+   */
+  nameOnly?: boolean
 }) {
   const { values, set, isSsm, portValid, ttlValid } = form
-  return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      <label htmlFor={`${idPrefix}-name`} className="flex flex-col gap-1 text-[13px] text-muted">
-        {i18nT('pages.settings.instancesPanel.name')}
-        <input id={`${idPrefix}-name`} aria-label={i18nT('pages.settings.instancesPanel.name')} className={inputCls} value={values.name} onChange={e => set('name', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.remote_host_1')} />
-      </label>
+  // Rename opens from a row menu whose focus trap is still mounted when this
+  // form commits, so a mount-time `autoFocus` is pulled straight back into the
+  // menu. Focus on the next tick instead, after the menu has unmounted.
+  const nameRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!nameOnly) return
+    const t = setTimeout(() => nameRef.current?.focus(), 0)
+    return () => clearTimeout(t)
+  }, [nameOnly])
+  // Machine-identity fields freeze for either reason; the rest only for rename.
+  const identityFrozen = lockTransport || nameOnly
+  const otherFields = (
+    <>
       {/* Not a <label>: SimpleSelect renders a button, so `htmlFor` would point
           at no form control. The caption text stays put and the accessible name
           moves to the trigger's aria-label (same key). */}
@@ -459,7 +495,7 @@ export function InstanceFormFields({
           value={values.method}
           onChange={v => set('method', v as 'ssh' | 'ssm')}
           aria-label={i18nT('pages.settings.instancesPanel.connection_method')}
-          disabled={lockTransport}
+          disabled={identityFrozen}
         />
         <span className="text-[12px] text-muted leading-snug">
           {isSsm
@@ -471,22 +507,22 @@ export function InstanceFormFields({
         <>
           <label htmlFor={`${idPrefix}-ssm-target`} className="flex flex-col gap-1 text-[13px] text-muted">
             {i18nT('pages.settings.instancesPanel.ssm_target_instance_id')}
-            <input id={`${idPrefix}-ssm-target`} aria-label={i18nT('pages.settings.instancesPanel.ssm_target_instance_id')} className={lockTransport ? readOnlyCls : inputCls} aria-readonly={lockTransport || undefined} value={values.ssmTarget} onChange={e => set('ssmTarget', e.target.value)} placeholder="i-0123456789abcdef0" readOnly={lockTransport} />
+            <input id={`${idPrefix}-ssm-target`} aria-label={i18nT('pages.settings.instancesPanel.ssm_target_instance_id')} className={identityFrozen ? readOnlyCls : inputCls} aria-readonly={identityFrozen || undefined} value={values.ssmTarget} onChange={e => set('ssmTarget', e.target.value)} placeholder="i-0123456789abcdef0" readOnly={identityFrozen} />
             <span className="text-[12px] text-muted leading-snug">
               {i18nT('pages.settings.instancesPanel.ec2_instance_id_i_or_ssm_managed_instance_id_mi')}
             </span>
           </label>
           <label htmlFor={`${idPrefix}-aws-profile`} className="flex flex-col gap-1 text-[13px] text-muted">
             {i18nT('pages.settings.instancesPanel.aws_profile')} <span className="text-muted-strong">{i18nT('pages.settings.instancesPanel.optional')}</span>
-            <input id={`${idPrefix}-aws-profile`} aria-label={i18nT('pages.settings.instancesPanel.aws_profile')} className={lockTransport ? readOnlyCls : inputCls} aria-readonly={lockTransport || undefined} value={values.awsProfile} onChange={e => set('awsProfile', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.default_credential_chain')} readOnly={lockTransport} />
+            <input id={`${idPrefix}-aws-profile`} aria-label={i18nT('pages.settings.instancesPanel.aws_profile')} className={identityFrozen ? readOnlyCls : inputCls} aria-readonly={identityFrozen || undefined} value={values.awsProfile} onChange={e => set('awsProfile', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.default_credential_chain')} readOnly={identityFrozen} />
           </label>
           <label htmlFor={`${idPrefix}-aws-region`} className="flex flex-col gap-1 text-[13px] text-muted">
             {i18nT('pages.settings.instancesPanel.aws_region')} <span className="text-muted-strong">{i18nT('pages.settings.instancesPanel.optional')}</span>
-            <input id={`${idPrefix}-aws-region`} aria-label={i18nT('pages.settings.instancesPanel.aws_region')} className={lockTransport ? readOnlyCls : inputCls} aria-readonly={lockTransport || undefined} value={values.awsRegion} onChange={e => set('awsRegion', e.target.value)} placeholder="us-east-1" readOnly={lockTransport} />
+            <input id={`${idPrefix}-aws-region`} aria-label={i18nT('pages.settings.instancesPanel.aws_region')} className={identityFrozen ? readOnlyCls : inputCls} aria-readonly={identityFrozen || undefined} value={values.awsRegion} onChange={e => set('awsRegion', e.target.value)} placeholder="us-east-1" readOnly={identityFrozen} />
           </label>
           <label htmlFor={`${idPrefix}-ssm-run-as`} className="flex flex-col gap-1 text-[13px] text-muted">
             {i18nT('pages.settings.instancesPanel.remote_user')} <span className="text-muted-strong">{i18nT('pages.settings.instancesPanel.optional')}</span>
-            <input id={`${idPrefix}-ssm-run-as`} aria-label={i18nT('pages.settings.instancesPanel.remote_user')} className={inputCls} value={values.ssmRunAs} onChange={e => set('ssmRunAs', e.target.value)} placeholder="ec2-user" />
+            <input id={`${idPrefix}-ssm-run-as`} aria-label={i18nT('pages.settings.instancesPanel.remote_user')} className={nameOnly ? readOnlyCls : inputCls} aria-readonly={nameOnly || undefined} value={values.ssmRunAs} onChange={e => set('ssmRunAs', e.target.value)} placeholder="ec2-user" readOnly={nameOnly} />
             <span className="text-[12px] text-muted leading-snug">
               {i18nT('pages.settings.instancesPanel.the_user_the_remote_gateway_runs_as_sudo_u_for_s')}
             </span>
@@ -495,12 +531,12 @@ export function InstanceFormFields({
       ) : (
         <label htmlFor={`${idPrefix}-ssh-host`} className="flex flex-col gap-1 text-[13px] text-muted">
           {i18nT('pages.settings.instancesPanel.ssh_host_alias')}
-          <input id={`${idPrefix}-ssh-host`} aria-label={i18nT('pages.settings.instancesPanel.ssh_host_alias')} className={inputCls} value={values.sshHost} onChange={e => set('sshHost', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.host_1_alias')} />
+          <input id={`${idPrefix}-ssh-host`} aria-label={i18nT('pages.settings.instancesPanel.ssh_host_alias')} className={nameOnly ? readOnlyCls : inputCls} aria-readonly={nameOnly || undefined} value={values.sshHost} onChange={e => set('sshHost', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.host_1_alias')} readOnly={nameOnly} />
         </label>
       )}
       <label htmlFor={`${idPrefix}-remote-port`} className="flex flex-col gap-1 text-[13px] text-muted">
         {i18nT('pages.settings.instancesPanel.remote_port')}
-        <input id={`${idPrefix}-remote-port`} aria-label={i18nT('pages.settings.instancesPanel.remote_port')} className={inputCls} value={values.remotePort} onChange={e => set('remotePort', e.target.value)} placeholder="5476" inputMode="numeric" />
+        <input id={`${idPrefix}-remote-port`} aria-label={i18nT('pages.settings.instancesPanel.remote_port')} className={nameOnly ? readOnlyCls : inputCls} aria-readonly={nameOnly || undefined} value={values.remotePort} onChange={e => set('remotePort', e.target.value)} placeholder="5476" inputMode="numeric" readOnly={nameOnly} />
         <span className="text-[12px] text-muted leading-snug">
           {i18nT('pages.settings.instancesPanel.must_match_the_port_the_remote_gateway_serves_on')}
         </span>
@@ -512,7 +548,7 @@ export function InstanceFormFields({
       </label>
       <label htmlFor={`${idPrefix}-ttl`} className="flex flex-col gap-1 text-[13px] text-muted">
         {i18nT('pages.settings.instancesPanel.token_ttl')}
-        <input id={`${idPrefix}-ttl`} aria-label={i18nT('pages.settings.instancesPanel.token_ttl')} className={inputCls} value={values.ttl} onChange={e => set('ttl', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.20h')} />
+        <input id={`${idPrefix}-ttl`} aria-label={i18nT('pages.settings.instancesPanel.token_ttl')} className={nameOnly ? readOnlyCls : inputCls} aria-readonly={nameOnly || undefined} value={values.ttl} onChange={e => set('ttl', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.20h')} readOnly={nameOnly} />
         {!ttlValid ? (
           <span className="text-[12px] text-danger leading-snug">
             {i18nT('pages.settings.remoteCrewPanel.ttl_must_be_hours_or_minutes')}
@@ -524,16 +560,40 @@ export function InstanceFormFields({
         <input
           id={`${idPrefix}-remote-bin`}
           aria-label={i18nT('pages.settings.instancesPanel.remote_kirocrew_path')}
-          className={inputCls}
+          className={nameOnly ? readOnlyCls : inputCls}
+          aria-readonly={nameOnly || undefined}
           value={values.remoteBin}
           onChange={e => set('remoteBin', e.target.value)}
           placeholder={i18nT('pages.settings.instancesPanel.home_you_local_bin_kirocrew_leave_blank_for_stan')}
+          readOnly={nameOnly}
         />
         <span className="text-[12px] text-muted leading-snug">
           {i18nT('pages.settings.instancesPanel.only_needed_if')} <code className="text-text">{i18nT('pages.settings.instancesPanel.kirocrew')}</code> {i18nT('pages.settings.instancesPanel.is_installed_somewhere_non_standard_on_the_remot')} <code className="text-text">{i18nT('pages.settings.instancesPanel.command_v_kirocrew')}</code>{' '}
           {i18nT('pages.settings.instancesPanel.commonly')} <code className="text-text">{i18nT('pages.settings.instancesPanel.local_bin_kirocrew')}</code>{i18nT('pages.settings.instancesPanel.use_an_absolute_path_no')} <code className="text-text">~</code>).
         </span>
       </label>
+    </>
+  )
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <label htmlFor={`${idPrefix}-name`} className="flex flex-col gap-1 text-[13px] text-muted">
+        {i18nT('pages.settings.instancesPanel.name')}
+        <input id={`${idPrefix}-name`} aria-label={i18nT('pages.settings.instancesPanel.name')} ref={nameRef} className={inputCls} value={values.name} onChange={e => set('name', e.target.value)} placeholder={i18nT('pages.settings.instancesPanel.remote_host_1')} />
+      </label>
+      {nameOnly ? (
+        /* Rename is a one-field task: the rest of the record stays reachable
+           behind a collapsed disclosure rather than filling the form. Rendered
+           inside the caller's pending-save <fieldset>, so an in-flight save
+           freezes these fields too. */
+        <details className="sm:col-span-2">
+          <summary className="cursor-pointer text-[13px] text-muted">
+            {i18nT('pages.settings.remoteCrewPanel.other_settings_read_only')}
+          </summary>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">{otherFields}</div>
+        </details>
+      ) : (
+        otherFields
+      )}
     </div>
   )
 }

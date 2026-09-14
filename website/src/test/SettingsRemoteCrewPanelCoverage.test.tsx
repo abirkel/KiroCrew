@@ -84,6 +84,7 @@ const CLOUD_INSTANCE: InstanceView = {
   aws_profile: 'Admin',
   aws_region: 'us-west-2',
   ssm_run_as: '',
+  provisioner_id: 'aws_ec2',
   remote_port: 5476,
   local_port: 0,
   ttl: '20h',
@@ -421,7 +422,7 @@ describe('RemoteCrewPanel — instance actions', () => {
     renderWithProviders(<RemoteCrewPanel />)
 
     // An absent cap falls back to the default rather than advertising "up to 0".
-    expect(await screen.findByText(/Up to 5 stay warm at once/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Up to 10 stay warm at once/i)).toBeInTheDocument()
 
     await openRowMenu(u)
     await u.click(await screen.findByRole('menuitem', { name: /^Delete Kiro Crew Cloud/ }))
@@ -712,6 +713,7 @@ describe('RemoteCrewPanel — editing a crew', () => {
       expect(api.updateInstance).toHaveBeenCalledWith(
         'm1',
         expect.objectContaining({ ssh_host: 'dev-box-2', remote_port: 7999 }),
+        expect.objectContaining({ signal: expect.anything() }),
       ),
     )
     // The form closes on success rather than leaving a stale copy of the row open.
@@ -752,7 +754,7 @@ describe('RemoteCrewPanel — editing a crew', () => {
     await u.click(form.getByRole('button', { name: /Save changes/i }))
 
     await waitFor(() =>
-      expect(api.updateInstance).toHaveBeenCalledWith('m1', expect.objectContaining({ remote_bin: '' })),
+      expect(api.updateInstance).toHaveBeenCalledWith('m1', expect.objectContaining({ remote_bin: '' }), expect.objectContaining({ signal: expect.anything() })),
     )
   })
   it('closes the tunnel on a transport change and leaves reconnecting to the user', async () => {
@@ -773,7 +775,7 @@ describe('RemoteCrewPanel — editing a crew', () => {
     await u.click(form.getByRole('button', { name: /Save changes/i }))
 
     await waitFor(() =>
-      expect(api.updateInstance).toHaveBeenCalledWith('m1', expect.objectContaining({ remote_port: 7999 })),
+      expect(api.updateInstance).toHaveBeenCalledWith('m1', expect.objectContaining({ remote_port: 7999 }), expect.objectContaining({ signal: expect.anything() })),
     )
     expect(api.connectInstance).not.toHaveBeenCalled()
   })
@@ -934,7 +936,7 @@ describe('RemoteCrewPanel — editing a crew', () => {
     await u.click(form.getByRole('button', { name: /Save changes/i }))
 
     await waitFor(() =>
-      expect(api.updateInstance).toHaveBeenCalledWith('m1', expect.objectContaining({ aws_profile: 'Fixed' })),
+      expect(api.updateInstance).toHaveBeenCalledWith('m1', expect.objectContaining({ aws_profile: 'Fixed' }), expect.objectContaining({ signal: expect.anything() })),
     )
   })
 
@@ -1011,6 +1013,106 @@ describe('RemoteCrewPanel — editing a crew', () => {
     const refusal = screen.getByRole('alert')
     expect(refusal).toHaveTextContent(/Save or cancel the open edit/i)
     expect(refusal.closest('[data-crew-id]')?.getAttribute('data-crew-id')).toBe('m2')
+  })
+
+
+  it('aborts an edit save on unmount and lets the restored draft save again', async () => {
+    vi.mocked(api.listInstances).mockResolvedValue(list([MANUAL_INSTANCE]))
+    vi.mocked(api.updateInstance).mockImplementation(
+      () => new Promise<InstanceView>(() => {}),
+    )
+    const u = setup()
+    const view = renderWithProviders(<RemoteCrewPanel />)
+
+    try {
+      await openRowMenu(u, /More actions for dev-box-1/i)
+      await u.click(await screen.findByRole('menuitem', { name: /Edit settings/i }))
+      const form = within(await screen.findByRole('group', { name: /Edit dev-box-1/i }))
+      const host = form.getByRole('textbox', { name: /SSH host/i })
+      await u.clear(host)
+      await u.type(host, 'dev-box-1-corrected')
+      await u.click(form.getByRole('button', { name: /Save changes/i }))
+      await waitFor(() => expect(api.updateInstance).toHaveBeenCalledTimes(1))
+
+      const firstSignal = vi.mocked(api.updateInstance).mock.calls[0]?.[2]?.signal
+      expect(firstSignal).toBeDefined()
+      expect(firstSignal?.aborted).toBe(false)
+
+      view.rerender(<></>)
+      expect(firstSignal?.aborted).toBe(true)
+
+      view.rerender(<RemoteCrewPanel />)
+      const restored = within(await screen.findByRole('group', { name: /Edit dev-box-1/i }))
+      expect(restored.getByRole('textbox', { name: /SSH host/i })).toHaveValue('dev-box-1-corrected')
+      expect(restored.getByRole('textbox', { name: /SSH host/i })).toBeEnabled()
+      const save = restored.getByRole('button', { name: /Save changes/i })
+      expect(save).toBeEnabled()
+      await u.click(save)
+      await waitFor(() => expect(api.updateInstance).toHaveBeenCalledTimes(2))
+    } finally {
+      view.unmount()
+      view.queryClient.clear()
+    }
+  })
+
+  it('freezes the live edit form while its save is pending', async () => {
+    let resolveSave!: (value: InstanceView) => void
+    vi.mocked(api.updateInstance).mockImplementation(
+      () => new Promise(resolve => { resolveSave = resolve }),
+    )
+    const u = setup()
+    renderWithProviders(<RemoteCrewPanel />)
+
+    await openRowMenu(u, /More actions for dev-box-1/i)
+    await u.click(await screen.findByRole('menuitem', { name: /Edit settings/i }))
+    const form = within(await screen.findByRole('group', { name: /Edit dev-box-1/i }))
+    const host = form.getByRole('textbox', { name: /SSH host/i })
+    await u.click(form.getByRole('button', { name: /Save changes/i }))
+
+    const save = form.getByRole('button', { name: /Saving/i })
+    expect(save).toBeDisabled()
+    expect(host).toBeDisabled()
+    // Disabled must also LOOK disabled: the freeze comes from the ancestor
+    // <fieldset disabled>, so only native `disabled:` variants can render it.
+    expect(host).toHaveClass('disabled:opacity-60', 'disabled:cursor-not-allowed')
+    expect(screen.getByRole('button', { name: /Set up a new one/i })).toBeEnabled()
+
+    await act(async () => { resolveSave(MANUAL_INSTANCE) })
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: /Edit dev-box-1/i })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('reuses the same-row edit form when Rename is chosen', async () => {
+    const u = setup()
+    renderWithProviders(<RemoteCrewPanel />)
+
+    await openRowMenu(u, /More actions for dev-box-1/i)
+    await u.click(await screen.findByRole('menuitem', { name: /Edit settings/i }))
+    const settings = within(
+      await screen.findByRole('group', { name: /Edit dev-box-1/i }),
+    )
+    const host = settings.getByRole('textbox', { name: /SSH host/i })
+    await u.clear(host)
+    await u.type(host, 'dev-box-1-corrected')
+
+    await openRowMenu(u, /More actions for dev-box-1/i)
+    await u.click(await screen.findByRole('menuitem', { name: /^Rename$/i }))
+
+    const renamed = within(
+      screen.getByRole('group', { name: /Rename dev-box-1/i }),
+    )
+    expect(screen.queryByText(/Save or cancel the open edit/i)).not.toBeInTheDocument()
+    // Rename edits the name alone: the restored draft's host correction stays
+    // VISIBLE (the user must see what a save would send) but read-only.
+    expect(renamed.getByText(/Other settings \(read-only\)/)).toBeInTheDocument()
+    const renamedHost = renamed.getByRole('textbox', { name: /SSH host/i })
+    expect(renamedHost).toHaveValue('dev-box-1-corrected')
+    expect(renamedHost).toHaveAttribute('readonly')
+    expect(renamed.getByRole('textbox', { name: /Token TTL/i })).toHaveAttribute('readonly')
+    expect(renamed.getByRole('textbox', { name: /^Name$/i })).not.toHaveAttribute('readonly')
+    expect(screen.queryByRole('group', { name: /Edit dev-box-1/i })).not.toBeInTheDocument()
+    expect(api.updateInstance).not.toHaveBeenCalled()
   })
 
   it('keeps a typed edit across a switch to the setup tab and back', async () => {
