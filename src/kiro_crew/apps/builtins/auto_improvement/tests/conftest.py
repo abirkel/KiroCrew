@@ -45,6 +45,7 @@ one.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -62,16 +63,22 @@ _GIT_IDENTITY = {
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _git_identity_for_production_commit_paths() -> None:
+def _git_identity_for_production_commit_paths() -> Iterator[None]:
     """Give every ``git commit`` in this suite an identity, on any host.
 
-    ``os.environ`` directly rather than ``monkeypatch``: that fixture is function-scoped and
-    this has to hold for the whole session, including subprocesses launched from module-level
-    helpers. Pre-existing values are left alone so a developer who has deliberately exported
-    an identity keeps it.
+    A session-scoped ``MonkeyPatch`` instance rather than the ``monkeypatch`` fixture: that
+    fixture is function-scoped and this has to hold for the whole session, including
+    subprocesses launched from module-level helpers. It still has to be UNDONE at session end:
+    under xdist this worker goes on to run other suites, and a key written straight into
+    ``os.environ`` would reach every later test on the worker as an identity none of them set.
+    Pre-existing values are left alone so a developer who has deliberately exported an
+    identity keeps it.
     """
-    for key, value in _GIT_IDENTITY.items():
-        os.environ.setdefault(key, value)
+    with pytest.MonkeyPatch.context() as patched:
+        for key, value in _GIT_IDENTITY.items():
+            if key not in os.environ:
+                patched.setenv(key, value)
+        yield
 
 
 @pytest.fixture(autouse=True)
