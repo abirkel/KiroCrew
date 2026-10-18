@@ -16936,8 +16936,8 @@
         "translucent_panels": "Panneaux translucides",
         "translucent_panels_desc": "Affiche la barre supérieure, la barre d’onglets, la zone de message, les puces de suggestion et les champs de recherche en verre dépoli au-dessus du contenu qui défile dessous. Désactivé, ce sont des cartes opaques.",
         "desktop_app": "Application de bureau",
-        "keep_running_when_window_closed": "Continuer à s'exécuter quand la fenêtre est fermée",
-        "keep_running_when_window_closed_desc": "Fermer la fenêtre masque {{productName}} et vos sessions continuent. Désactivez cette option pour que le bouton de fermeture quitte l'application : une passerelle lancée par cette application s'arrête avec elle, et une passerelle à laquelle elle se connecte seulement continue de tourner."
+        "keep_running_when_window_closed": "Laisser l'application tourner en arrière-plan quand la fenêtre est fermée",
+        "keep_running_when_window_closed_desc": "Fermer la fenêtre masque {{productName}}, et vos sessions et tâches continuent. Désactivez cette option pour que le bouton de fermeture quitte l'application. Une passerelle lancée par cette application s'arrête avec elle, et une passerelle à laquelle elle se connecte seulement continue de tourner."
       },
       "importPanel": {
         "agent_data": "Données de l'agent",

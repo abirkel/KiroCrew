@@ -55,9 +55,7 @@ test("the setter stores one of the two canonical values and returns it", () => {
   assert.deepEqual(store.writes, [
     [CLOSE_ACTION_KEY, "quit"],
     [CLOSE_ACTION_KEY, "background"],
-    [CLOSE_ACTION_KEY, "background"],
-    [CLOSE_ACTION_KEY, "background"],
-  ]);
+  ], "a write that changes nothing is skipped");
 });
 
 test("decideClose: a quit already under way always persists", () => {

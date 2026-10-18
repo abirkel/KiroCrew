@@ -9326,8 +9326,8 @@
         "font_family_option_opendyslexic": "OpenDyslexic",
         "font_family_option_custom": "Custom",
         "desktop_app": "Desktop app",
-        "keep_running_when_window_closed": "Keep running when the window is closed",
-        "keep_running_when_window_closed_desc": "Closing the window hides {{productName}} and keeps your sessions running. Turn this off to make the close button quit the app: a gateway this app started stops with it, and a gateway it only connects to keeps running."
+        "keep_running_when_window_closed": "Leave app running in the background when the window is closed",
+        "keep_running_when_window_closed_desc": "Closing the window hides {{productName}} and keeps your sessions and jobs running. Turn this off to make the close button quit the app. A gateway this app started stops with it, and a gateway it only connects to keeps running."
       },
       "importPanel": {
         "agent_data": "Agent data",

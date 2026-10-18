@@ -43,7 +43,8 @@ function getCloseAction(store) {
  */
 function setCloseAction(store, value) {
   const next = value === CLOSE_ACTION_QUIT ? CLOSE_ACTION_QUIT : CLOSE_ACTION_BACKGROUND;
-  store.set(CLOSE_ACTION_KEY, next);
+  // electron-store rewrites the whole file on every set; skip a no-op.
+  if (store.get(CLOSE_ACTION_KEY) !== next) store.set(CLOSE_ACTION_KEY, next);
   return next;
 }
 
@@ -103,25 +104,6 @@ function createCloseHandler({ isQuitting, getAction, cancelPendingHide, requestQ
   };
 }
 
-/**
- * One ordered stream for every writer of the close action. A Settings write
- * awaits an ownership probe before it may write; without a shared queue, a
- * tray click made while that probe is pending would land first and then be
- * overwritten by the older Settings request. Each task runs only after every
- * task enqueued before it has settled, so the last action the user took is the
- * one that sticks. A rejected task rejects for its own caller only.
- *
- * @returns {<T>(task: () => T | Promise<T>) => Promise<T>}
- */
-function createWriteQueue() {
-  let tail = Promise.resolve();
-  return (task) => {
-    const run = tail.then(task);
-    tail = run.catch(() => {});
-    return run;
-  };
-}
-
 module.exports = {
   CLOSE_ACTION_KEY,
   CLOSE_ACTION_BACKGROUND,
@@ -130,5 +112,4 @@ module.exports = {
   setCloseAction,
   decideClose,
   createCloseHandler,
-  createWriteQueue,
 };

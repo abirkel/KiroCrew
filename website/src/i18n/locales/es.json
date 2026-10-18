@@ -16936,8 +16936,8 @@
         "translucent_panels": "Paneles translúcidos",
         "translucent_panels_desc": "Muestra la barra superior, la barra de pestañas, el cuadro de mensaje, los chips de sugerencias y los campos de búsqueda como cristal esmerilado sobre el contenido que se desplaza debajo. Desactivado, son tarjetas opacas.",
         "desktop_app": "Aplicación de escritorio",
-        "keep_running_when_window_closed": "Seguir en ejecución al cerrar la ventana",
-        "keep_running_when_window_closed_desc": "Al cerrar la ventana, {{productName}} se oculta y tus sesiones siguen en ejecución. Desactívalo para que el botón de cerrar salga de la aplicación: un gateway iniciado por esta aplicación se detiene con ella, y un gateway al que solo se conecta sigue en ejecución."
+        "keep_running_when_window_closed": "Mantener la aplicación en segundo plano al cerrar la ventana",
+        "keep_running_when_window_closed_desc": "Al cerrar la ventana, {{productName}} se oculta y tus sesiones y trabajos programados siguen en ejecución. Desactívalo para que el botón de cerrar haga salir de la aplicación. Un gateway iniciado por esta aplicación se detiene con ella, y un gateway al que solo se conecta sigue en ejecución."
       },
       "importPanel": {
         "agent_data": "Datos del agente",

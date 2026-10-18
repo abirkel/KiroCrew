@@ -16936,8 +16936,8 @@
         "translucent_panels": "Pannelli traslucidi",
         "translucent_panels_desc": "Mostra la barra superiore, la barra delle schede, la casella del messaggio, i chip dei suggerimenti e i campi di ricerca come vetro smerigliato sopra il contenuto che scorre sotto. Disattivato, sono schede opache.",
         "desktop_app": "App desktop",
-        "keep_running_when_window_closed": "Continua l'esecuzione alla chiusura della finestra",
-        "keep_running_when_window_closed_desc": "Chiudendo la finestra, {{productName}} viene nascosto e le sessioni continuano. Disattiva l'opzione perché il pulsante di chiusura esca dall'app: un gateway avviato da questa app si arresta con essa, mentre un gateway a cui si connette soltanto continua a funzionare."
+        "keep_running_when_window_closed": "Lascia l'app in esecuzione in background alla chiusura della finestra",
+        "keep_running_when_window_closed_desc": "Chiudendo la finestra, {{productName}} viene nascosto e le sessioni e i lavori pianificati continuano. Disattiva l'opzione perché il pulsante di chiusura faccia uscire dall'app. Un gateway avviato da questa app si arresta con essa, mentre un gateway a cui si connette soltanto continua a funzionare."
       },
       "importPanel": {
         "agent_data": "Dati dell'agente",

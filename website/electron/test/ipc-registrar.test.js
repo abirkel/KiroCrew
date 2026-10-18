@@ -335,7 +335,6 @@ function harness({
         return args[0] === "quit" ? "quit" : "background";
       },
       // The real facade's ordered queue.
-      enqueue: require("../close-action").createWriteQueue(),
     },
   };
   for (const name of [
@@ -1519,13 +1518,36 @@ test("pane:clear-http-cache is gated to the local dashboard sender", async () =>
 
 // ── close-action:get / close-action:set (#12204) ────────────────────────────
 //
-// The setter changes how this machine's app behaves, so both channels take the
-// full three-gate local-dashboard check, exactly like wsl:detect.
+// The setting governs only the MAIN window's close button, so both channels
+// answer only that window's own dashboard: the main window's view, its top
+// frame, on the window's assigned dashboard origin. This is a deliberate
+// exception to the three-gate check, so a main window on a configured REMOTE
+// gateway still gets the row, and connection windows never do.
 
 const CLOSE_ACTION_CHANNELS = [
   ["close-action:get", []],
   ["close-action:set", ["quit"]],
 ];
+const MAIN_WINDOW_ONLY = (channel) => ({
+  message: `${channel} is restricted to the main window's dashboard`,
+});
+
+// A harness whose main window is `main`, with the sender mapped to `owner`.
+function closeActionHarness({ mainBackendUrl = "http://localhost:5476", owner = "main", ...rest } = {}) {
+  const h = harness(rest);
+  const main = { fake: "main-window", _mcBackendUrl: mainBackendUrl };
+  const other = { fake: "connection-window", _mcBackendUrl: "http://localhost:6100" };
+  h.windows.getMainWindow = () => main;
+  h.windows.windowForWebContents = () => (owner === "main" ? main : owner === "other" ? other : null);
+  h.registrar.registerShell();
+  return h;
+}
+
+// A top-frame sender on `url`.
+function mainFrameEvent(url = "http://localhost:5476/settings") {
+  const frame = { url };
+  return { sender: { id: "main-view", mainFrame: frame }, senderFrame: frame };
+}
 
 function assertCloseActionRefused(h, channel) {
   assert.equal(
@@ -1535,87 +1557,67 @@ function assertCloseActionRefused(h, channel) {
   );
 }
 
-test("close-action channels reject wrong and unreadable sender origins", async () => {
-  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
-    for (const event of [wslEvent("https://remote.example/settings"), { sender: { id: "blank" } }]) {
-      const h = harness();
-      h.registrar.registerShell();
-      await assert.rejects(
-        () => h.handlers.get(channel)(event, ...args),
-        { message: `${channel} is restricted to the local dashboard` },
-      );
-      assertCloseActionRefused(h, channel);
-    }
-  }
-});
-
-test("close-action channels reject a window whose gateway is not local", async () => {
-  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
-    for (const wslOwner of [null, { fake: "remote-window" }]) {
-      const h = harness({ wslOwner, wslGatewayLocal: false });
-      h.registrar.registerShell();
-      await assert.rejects(
-        () => h.handlers.get(channel)(wslEvent(), ...args),
-        { message: `${channel} is restricted to the local dashboard` },
-      );
-      assertCloseActionRefused(h, channel);
-    }
-  }
-});
-
-test("close-action channels reject a primary port this shell does not own", async () => {
-  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
-    for (const primaryPortOwner of ["foreign", "none", "unknown"]) {
-      const h = harness({ primaryPortOwner });
-      h.registrar.registerShell();
-      await assert.rejects(
-        () => h.handlers.get(channel)(wslEvent(), ...args),
-        { message: `${channel} is restricted to the local dashboard` },
-      );
-      assertCloseActionRefused(h, channel);
-    }
-  }
-});
-
-test("close-action channels read and write through the window facade for the local dashboard", async () => {
-  for (const primaryPortOwner of ["kirocrew", "service"]) {
-    const h = harness({ primaryPortOwner });
-    h.registrar.registerShell();
-    assert.equal(await h.handlers.get("close-action:get")(wslEvent()), "background");
-    assert.equal(await h.handlers.get("close-action:set")(wslEvent(), "quit"), "quit");
+test("close-action channels answer the main window's dashboard, including on a remote gateway", async () => {
+  for (const [mainBackendUrl, wslGatewayLocal, primaryPortOwner] of [
+    ["http://localhost:5476", true, "kirocrew"],
+    // A main window connected to a configured remote host through a tunnel:
+    // the three-gate check would refuse it, this one must not.
+    ["http://localhost:5476", false, "foreign"],
+  ]) {
+    const h = closeActionHarness({ mainBackendUrl, wslGatewayLocal, primaryPortOwner });
+    const url = `${mainBackendUrl}/settings`;
+    assert.equal(await h.handlers.get("close-action:get")(mainFrameEvent(url)), "background");
+    assert.equal(await h.handlers.get("close-action:set")(mainFrameEvent(url), "quit"), "quit");
     assert.deepEqual(lastCall(h.windowCalls, "closeAction.set"), ["closeAction.set", "quit"]);
-    // The registrar itself never writes the store: the facade is the one writer,
-    // so the tray checkmark is refreshed with every change.
+    // The registrar never writes the store itself: the window facade does.
     assert.equal(h.store.writes.some(([key]) => key === "closeAction"), false);
   }
 });
 
-test("close-action:set applies writes in the order they were sent, even when gates settle out of order", async () => {
-  const h = harness();
-  h.registrar.registerShell();
-  // The first write's ownership probe is slow; the second's answers at once.
-  let releaseFirst;
-  const slow = new Promise((resolve) => { releaseFirst = () => resolve("kirocrew"); });
-  const probes = [slow, Promise.resolve("kirocrew")];
-  h.gateway.probePrimaryPortOwner = () => probes.shift();
-
-  const first = h.handlers.get("close-action:set")(wslEvent(), "quit");
-  const second = h.handlers.get("close-action:set")(wslEvent(), "background");
-  // Let every already-runnable continuation drain before the slow gate opens:
-  // an unserialized setter would write "background" here, ahead of "quit".
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(h.windowCalls.some(([name]) => name === "closeAction.set"), false);
-  releaseFirst();
-  assert.deepEqual(await Promise.all([first, second]), ["quit", "background"]);
-  const writes = h.windowCalls.filter(([name]) => name === "closeAction.set").map(([, v]) => v);
-  assert.deepEqual(writes, ["quit", "background"], "the later toggle must be the one that sticks");
+test("close-action channels refuse every sender that is not the main window", async () => {
+  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
+    for (const owner of ["other", null]) {
+      const h = closeActionHarness({ owner });
+      await assert.rejects(() => h.handlers.get(channel)(mainFrameEvent(), ...args), MAIN_WINDOW_ONLY(channel));
+      assertCloseActionRefused(h, channel);
+    }
+  }
 });
 
-test("a refused close-action:set does not block the writes queued behind it", async () => {
-  const h = harness();
-  h.registrar.registerShell();
-  const probes = [Promise.resolve("foreign"), Promise.resolve("kirocrew")];
-  h.gateway.probePrimaryPortOwner = () => probes.shift();
-  await assert.rejects(() => h.handlers.get("close-action:set")(wslEvent(), "quit"));
-  assert.equal(await h.handlers.get("close-action:set")(wslEvent(), "quit"), "quit");
+test("close-action channels refuse a subframe of the main window", async () => {
+  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
+    const h = closeActionHarness();
+    const event = mainFrameEvent();
+    event.senderFrame = { url: "http://localhost:5476/embedded" }; // not sender.mainFrame
+    await assert.rejects(() => h.handlers.get(channel)(event, ...args), MAIN_WINDOW_ONLY(channel));
+    assertCloseActionRefused(h, channel);
+  }
+});
+
+test("close-action channels refuse a main window navigated off its dashboard", async () => {
+  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
+    for (const url of ["https://remote.example/settings", "http://localhost:6100/settings", "about:blank", ""]) {
+      const h = closeActionHarness();
+      await assert.rejects(() => h.handlers.get(channel)(mainFrameEvent(url), ...args), MAIN_WINDOW_ONLY(channel));
+      assertCloseActionRefused(h, channel);
+    }
+  }
+});
+
+test("close-action channels refuse when there is no main window", async () => {
+  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
+    const h = closeActionHarness();
+    h.windows.getMainWindow = () => null;
+    await assert.rejects(() => h.handlers.get(channel)(mainFrameEvent(), ...args), MAIN_WINDOW_ONLY(channel));
+    assertCloseActionRefused(h, channel);
+  }
+});
+
+test("close-action channels never run the port-owner probe", async () => {
+  const h = closeActionHarness();
+  let probes = 0;
+  h.gateway.probePrimaryPortOwner = () => { probes += 1; return Promise.resolve("kirocrew"); };
+  await h.handlers.get("close-action:get")(mainFrameEvent());
+  await h.handlers.get("close-action:set")(mainFrameEvent(), "quit");
+  assert.equal(probes, 0, "the check is synchronous so no write waits on a probe");
 });

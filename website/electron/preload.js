@@ -232,10 +232,10 @@ contextBridge.exposeInMainWorld("wslAPI", {
 // What the main window's close button does, for Settings > Display > Desktop
 // app: "background" (hide, keep running) or "quit". Lives in the app's own
 // config like the local-gateway switch. Both calls resolve with the stored
-// value. The main process rejects every sender that is not this shell's own
-// local dashboard, so the row renders only once `get` succeeds; a connection
-// window on a remote gateway changes it from the tray menu instead. Absent in
-// plain browsers and in the PWA, which have no close button to configure.
+// value. The main process answers only the MAIN window's own dashboard (the
+// window whose close button this governs), so the row renders only once `get`
+// succeeds and never in a connection window. Absent in plain browsers and in
+// the PWA, which have no close button to configure.
 contextBridge.exposeInMainWorld("closeActionAPI", {
   get: () => ipcRenderer.invoke("close-action:get"),
   set: (action) => ipcRenderer.invoke("close-action:set", String(action || "")),

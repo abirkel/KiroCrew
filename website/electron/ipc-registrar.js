@@ -327,24 +327,51 @@ function createIpcRegistrar({
     });
 
     // What the main window's close button does (Settings > Display > Desktop
-    // app). Gated like the channels above even though the value is harmless to
-    // read: the SETTER changes how this machine's app behaves, and a connection
-    // window pointed at a REMOTE gateway shares this preload. Remote pages get a
-    // rejection, so the dashboard hides the row there and the tray menu's
-    // checkbox stays the way to change it. Both resolve with the stored value.
+    // app). A deliberate, narrower exception to `assertLocalDashboard`, because
+    // this setting governs only the MAIN window's close button and Settings is
+    // its only control. The three-gate check would hide the row from a main
+    // window connected to a configured remote host, leaving that user no way
+    // to change it. Instead the sender must BE the main window's dashboard:
+    // the main window's own view, its top frame (no subframe), still on that
+    // window's assigned dashboard origin. Connection windows, prompts and
+    // navigated-away pages are refused. This knowingly trusts the dashboard
+    // loaded in the main window, local or remote, with a two-valued preference
+    // whose effect is visible and reversible; on Windows that renderer can
+    // already quit the app through the title-bar File menu. Synchronous, so no
+    // write can wait on a probe or overtake another.
+    const assertMainWindowDashboard = (event, channel) => {
+      const refuse = (why) => {
+        log(`${channel} rejected: ${why}`);
+        throw new Error(`${channel} is restricted to the main window's dashboard`);
+      };
+      const main = windows.getMainWindow();
+      if (!main || windows.windowForWebContents(event.sender) !== main) {
+        refuse("sender is not the main window");
+      }
+      if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) {
+        refuse("sender is not the top frame");
+      }
+      let origin = "";
+      let expected = "";
+      try {
+        origin = new URL(event.senderFrame.url).origin;
+        expected = new URL(main._mcBackendUrl).origin;
+      } catch {
+        // An unreadable URL matches nothing.
+      }
+      if (!origin || origin !== expected) {
+        refuse(`sender origin ${origin || "(unreadable)"} is not the main window's dashboard`);
+      }
+    };
     ipcMain.handle("close-action:get", async (event) => {
-      await assertLocalDashboard(event, "close-action:get");
+      assertMainWindowDashboard(event, "close-action:get");
       return windows.closeAction.get();
     });
-    // Writes run in the window facade's one ordered queue, shared with the tray
-    // checkbox. Each one awaits its own gate (a port-owner probe) INSIDE its
-    // queued task, so neither a quick second toggle nor a tray click made while
-    // the probe is pending can be overwritten by this older request.
-    ipcMain.handle("close-action:set", (event, value) =>
-      windows.closeAction.enqueue(async () => {
-        await assertLocalDashboard(event, "close-action:set");
-        return windows.closeAction.set(value);
-      }));
+    // Resolves with the stored value, which is what the switch renders.
+    ipcMain.handle("close-action:set", async (event, value) => {
+      assertMainWindowDashboard(event, "close-action:set");
+      return windows.closeAction.set(value);
+    });
 
     // Open a file the chat referenced in the user's own editor, by handing its
     // path to the OS default handler on the machine in front of them.

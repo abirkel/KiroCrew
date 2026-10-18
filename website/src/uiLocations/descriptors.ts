@@ -89,7 +89,7 @@ export const SEARCH_TERMS: Record<string, UiSearchTerms> = {
     'zh-CN': ['配色', '颜色主题', '外观'],
   },
   // What users call the behaviour, whatever their platform names the tray.
-  'setting:display.keep-running-when-the-window-is-closed': {
+  'setting:display.leave-app-running-in-the-background-when-the-window-is-closed': {
     en: ['close to tray', 'minimize to tray', 'quit on close', 'exit on close', 'run in background', 'system tray', 'close button'],
     'zh-CN': ['关闭到托盘', '最小化到托盘', '关闭时退出', '后台运行', '系统托盘'],
   },

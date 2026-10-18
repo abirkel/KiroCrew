@@ -10,10 +10,7 @@ const { createHangRecovery } = require("./hang-recovery");
 const { armSplashHistoryClear, fileShellPageBasename } = require("./splash-history");
 const { hideToTray, cancelPendingTrayHide, shouldKeepAppHidden } = require("./hide-to-tray");
 const {
-  CLOSE_ACTION_BACKGROUND,
-  CLOSE_ACTION_QUIT,
   createCloseHandler,
-  createWriteQueue,
   getCloseAction,
   setCloseAction,
 } = require("./close-action");
@@ -986,19 +983,6 @@ function createWindowLifecycle(options) {
     }
     tray = new Tray(icon);
     tray.setToolTip(app.name);
-    refreshTrayMenu();
-    tray.on("click", showFromTray);
-    return tray;
-  }
-
-  // The tray menu is rebuilt from the store on every change rather than flipped
-  // in place: Electron does not re-read a menu item's `checked`, so a write from
-  // Settings would otherwise leave a stale checkmark here.
-  function refreshTrayMenu() {
-    if (!tray || (typeof tray.isDestroyed === "function" && tray.isDestroyed())) return;
-    const showFromTray = () => {
-      showMainWindow({ focus: true });
-    };
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: `Show ${app.name}`, click: showFromTray },
       { type: "separator" },
@@ -1006,37 +990,17 @@ function createWindowLifecycle(options) {
       { type: "separator" },
       { label: "Open Config File", click: () => openPathHardened(shell, store.path) },
       { type: "separator" },
-      // The native mirror of Settings > Display > Desktop app. It is the only
-      // place to change this from a window showing a remote gateway, where that
-      // Settings row is withheld (the local-dashboard gate). Electron flips
-      // `checked` before `click`, so the item's new state is the user's choice.
-      {
-        label: "Keep Running When Window Is Closed",
-        type: "checkbox",
-        checked: getCloseAction(store) === CLOSE_ACTION_BACKGROUND,
-        click: (item) => {
-          const value = item && item.checked ? CLOSE_ACTION_BACKGROUND : CLOSE_ACTION_QUIT;
-          // Behind any Settings write still waiting on its gate, so a click
-          // made now is never overwritten by that older request.
-          void enqueueCloseActionWrite(() => setCloseActionAndSync(value));
-        },
-      },
-      { type: "separator" },
       { label: "Quit", click: requestQuit },
     ]));
+    tray.on("click", showFromTray);
+    return tray;
   }
 
-  // Every write of the close action, from the tray or from Settings, runs
-  // through this one queue in the order the user acted.
-  const enqueueCloseActionWrite = createWriteQueue();
-
-  // The one writer of the close action, so the store and the tray checkmark
-  // cannot disagree. Returns the stored value, which is what Settings renders.
-  // Call it through enqueueCloseActionWrite.
-  function setCloseActionAndSync(value) {
+  // The only writer of the close action (Settings > Display > Desktop app).
+  // Returns the stored value, which is what the Settings switch renders.
+  function setCloseActionAndLog(value) {
     const written = setCloseAction(store, value);
     glog(`closeAction set to ${written}`);
-    refreshTrayMenu();
     return written;
   }
 
@@ -1741,10 +1705,7 @@ function createWindowLifecycle(options) {
     getTray: () => tray,
     closeAction: {
       get: () => getCloseAction(store),
-      set: setCloseActionAndSync,
-      // Runs a write task in the same ordered stream as tray clicks. The IPC
-      // setter puts its gate AND its write inside one task.
-      enqueue: enqueueCloseActionWrite,
+      set: setCloseActionAndLog,
     },
     getSummonWindow,
     focusedDashboardWindow,

@@ -110,7 +110,7 @@ export function DisplayPanel({ basePath }: { basePath?: string } = {}) {
   const { uiMode, setUIMode } = useUIMode()
   const editor = useThemeEditor()
   const { liquidGlass, setLiquidGlass } = useLiquidGlass()
-  const { closeAction, closeActionSupported, setCloseAction } = useCloseAction()
+  const { closeAction, closeActionSupported, closeActionPending, setCloseAction } = useCloseAction()
   const { botName, directLocal } = useBranding()
   const termFont = useTerminalFont()
   // Probed families become picker rows previewed in their own family, so the
@@ -583,9 +583,9 @@ export function DisplayPanel({ basePath }: { basePath?: string } = {}) {
         </SettingsCard>
       </SettingsSection>
       {/* Desktop-app-only: rendered once the main process has answered for
-          this machine's own dashboard (useCloseAction). Absent in a browser,
-          the PWA, and a window showing a remote gateway, where the tray menu
-          carries the same choice. */}
+          the main window's own dashboard (useCloseAction), local or remote
+          gateway alike, since it sets that window's close button. Absent in a
+          browser, the PWA, and connection windows. */}
       {closeActionSupported && (
         <SettingsSection title={i18nT('pages.settings.displayPanel.desktop_app')}>
           <SettingsCard>
@@ -593,6 +593,7 @@ export function DisplayPanel({ basePath }: { basePath?: string } = {}) {
               label={i18nT('pages.settings.displayPanel.keep_running_when_window_closed')}
               hint={i18nT('pages.settings.displayPanel.keep_running_when_window_closed_desc')}
               checked={closeAction === 'background'}
+              disabled={closeActionPending}
               onChange={on => setCloseAction(on ? 'background' : 'quit')}
             />
           </SettingsCard>

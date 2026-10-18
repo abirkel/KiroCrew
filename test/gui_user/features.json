@@ -6961,15 +6961,15 @@
     {
       "id": "settings-display-keep-running-when-closed-toggle",
       "feature": "settings",
-      "title": "Toggle Keep running when the window is closed",
+      "title": "Toggle Leave app running in the background when the window is closed",
       "user_story": "As a desktop user who does not want the app left in the tray, I want the window close button to quit the app, so that closing the window ends it like other apps.",
       "start_url": "/settings/display/view",
-      "entry_path": "Settings > Display > View > Desktop app > Keep running when the window is closed toggle",
+      "entry_path": "Settings > Display > View > Desktop app > Leave app running in the background when the window is closed toggle",
       "preconditions": {
         "seed": "minimal",
         "members": [],
         "feature_flags": [],
-        "notes": "Section only renders in the desktop app on this machine's own dashboard; the tray menu's Keep Running When Window Is Closed item mirrors it. Takes effect on the next close."
+        "notes": "Section only renders in the desktop app's main window (local or remote gateway), because it controls that window's close button; connection windows do not show it. Takes effect on the next close."
       },
       "runnable": "native-only",
       "estimated_steps": 4,
