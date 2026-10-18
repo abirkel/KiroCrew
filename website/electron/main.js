@@ -106,6 +106,9 @@ const store = new Store({
     updateChannel: "",
     autoDownloadUpdates: true,
     runLocalGateway: true,
+    // What the main window's close button does: "background" (hide, keep
+    // running) or "quit". See close-action.js.
+    closeAction: "background",
     linuxFrameless: null,
     // Written by gpu-crash-fallback.js when the GPU process dies at startup;
     // read before Chromium initializes on the next launch.

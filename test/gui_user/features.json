@@ -4,16 +4,16 @@
   "counts": {
     "smoke": 42,
     "nightly": 166,
-    "native-only": 12,
+    "native-only": 13,
     "needs-secret": 27,
     "excluded": 23,
-    "total": 270
+    "total": 271
   },
   "priorities": {
     "P0": 10,
     "P1": 35,
     "P2": 161,
-    "P3": 62
+    "P3": 63
   },
   "per_feature": {
     "chat": {
@@ -236,7 +236,7 @@
     "settings": {
       "smoke": 12,
       "nightly": 28,
-      "native-only": 3,
+      "native-only": 4,
       "needs-secret": 0,
       "excluded": 4
     },
@@ -6957,6 +6957,33 @@
         "settings-developer-run-local-gateway-toggle"
       ],
       "component": "website/src/pages/settings/DeveloperPanel.tsx"
+    },
+    {
+      "id": "settings-display-keep-running-when-closed-toggle",
+      "feature": "settings",
+      "title": "Toggle Keep running when the window is closed",
+      "user_story": "As a desktop user who does not want the app left in the tray, I want the window close button to quit the app, so that closing the window ends it like other apps.",
+      "start_url": "/settings/display/view",
+      "entry_path": "Settings > Display > View > Desktop app > Keep running when the window is closed toggle",
+      "preconditions": {
+        "seed": "minimal",
+        "members": [],
+        "feature_flags": [],
+        "notes": "Section only renders in the desktop app on this machine's own dashboard; the tray menu's Keep Running When Window Is Closed item mirrors it. Takes effect on the next close."
+      },
+      "runnable": "native-only",
+      "estimated_steps": 4,
+      "rationale": "Desktop-app-only section; not degradable to web because it is hidden without Electron, and the behaviour is the native window close.",
+      "source": [
+        "website/src/pages/settings/DisplayPanel.tsx",
+        "website/src/hooks/useCloseAction.ts",
+        "website/electron/close-action.js"
+      ],
+      "priority": "P3",
+      "merged_from": [
+        "settings-display-keep-running-when-closed-toggle"
+      ],
+      "component": "website/src/pages/settings/DisplayPanel.tsx"
     },
     {
       "id": "settings-notifications-background-chat-finished",

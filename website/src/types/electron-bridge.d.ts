@@ -77,6 +77,13 @@ declare global {
     set: (enabled: boolean) => Promise<boolean>
   }
 
+  type CloseAction = 'background' | 'quit'
+
+  interface CloseActionAPI {
+    get: () => Promise<CloseAction>
+    set: (action: CloseAction) => Promise<CloseAction>
+  }
+
   interface CrashReportsAPI {
     get: () => Promise<{ newCount: number }>
     reveal: () => Promise<{ ok: boolean; error?: string }>
@@ -269,6 +276,7 @@ declare global {
     kirocrew?: KiroCrewBridge
     electronAPI?: ElectronAPI
     localGatewayAPI?: LocalGatewayAPI
+    closeActionAPI?: CloseActionAPI
     crashReportsAPI?: CrashReportsAPI
     wslAPI?: WslAPI
     folderPickAPI?: FolderPickAPI

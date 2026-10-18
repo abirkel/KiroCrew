@@ -380,6 +380,16 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # TEST-ONLY (branch test/tray-close-win-build, never merged): ship the
+      # staged app tree so it can run without installing over a prod build.
+      - name: Upload unpacked app (test only)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kirocrew-win-unpacked-x64
+          path: website/electron/dist/win-unpacked/
+          if-no-files-found: error
+          retention-days: 7
+
       # Reached only when every step above, the upload included, succeeded: a
       # failed step ends the job before this one, so the output stays empty
       # and `smoke-install-windows` sees no artifact to consume.

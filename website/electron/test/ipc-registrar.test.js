@@ -31,6 +31,8 @@ const SHELL_HANDLES = [
   "browser:set-inactive",
   "browser:set-overlay",
   "browser:track-session",
+  "close-action:get",
+  "close-action:set",
   "crash-reports:get",
   "crash-reports:reveal",
   "dashboard:can-pick-folder",
@@ -326,6 +328,15 @@ function harness({
     diagnostics: {
       memorySample: recordWindow("diagnostics.memorySample"),
     },
+    closeAction: {
+      get: recordWindow("closeAction.get", "background"),
+      set: (...args) => {
+        windowCalls.push(["closeAction.set", ...args]);
+        return args[0] === "quit" ? "quit" : "background";
+      },
+      // The real facade's ordered queue.
+      enqueue: require("../close-action").createWriteQueue(),
+    },
   };
   for (const name of [
     "open",
@@ -480,13 +491,13 @@ test("registerShell owns the exact shell channel set and is idempotent", () => {
 
   assert.deepEqual([...h.handlers.keys()].sort(), SHELL_HANDLES);
   assert.deepEqual([...h.listeners.keys()].sort(), SHELL_LISTENERS);
-  assert.equal(h.handlers.size + h.listeners.size, 40);
+  assert.equal(h.handlers.size + h.listeners.size, 42);
 
   // boot-complete is a further non-update host channel, but it is deliberately
   // gateway-owned and scoped to a single connecting WebContents. Registering it
   // globally here would weaken its sender check and leak listeners.
   assert.match(GATEWAY_SOURCE, /ipcMain\.on\("boot-complete", onComplete\)/);
-  assert.equal(h.handlers.size + h.listeners.size + 1, 41);
+  assert.equal(h.handlers.size + h.listeners.size + 1, 43);
   assert.equal(h.handlers.has("boot-complete"), false);
   assert.equal(h.listeners.has("boot-complete"), false);
 
@@ -1504,4 +1515,107 @@ test("pane:clear-http-cache is gated to the local dashboard sender", async () =>
     /restricted to the local dashboard/,
   );
   assert.equal(purges.length, 0);
+});
+
+// ── close-action:get / close-action:set (#12204) ────────────────────────────
+//
+// The setter changes how this machine's app behaves, so both channels take the
+// full three-gate local-dashboard check, exactly like wsl:detect.
+
+const CLOSE_ACTION_CHANNELS = [
+  ["close-action:get", []],
+  ["close-action:set", ["quit"]],
+];
+
+function assertCloseActionRefused(h, channel) {
+  assert.equal(
+    h.windowCalls.some(([name]) => name.startsWith("closeAction.")),
+    false,
+    `${channel}: a refused sender must not read or write the setting`,
+  );
+}
+
+test("close-action channels reject wrong and unreadable sender origins", async () => {
+  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
+    for (const event of [wslEvent("https://remote.example/settings"), { sender: { id: "blank" } }]) {
+      const h = harness();
+      h.registrar.registerShell();
+      await assert.rejects(
+        () => h.handlers.get(channel)(event, ...args),
+        { message: `${channel} is restricted to the local dashboard` },
+      );
+      assertCloseActionRefused(h, channel);
+    }
+  }
+});
+
+test("close-action channels reject a window whose gateway is not local", async () => {
+  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
+    for (const wslOwner of [null, { fake: "remote-window" }]) {
+      const h = harness({ wslOwner, wslGatewayLocal: false });
+      h.registrar.registerShell();
+      await assert.rejects(
+        () => h.handlers.get(channel)(wslEvent(), ...args),
+        { message: `${channel} is restricted to the local dashboard` },
+      );
+      assertCloseActionRefused(h, channel);
+    }
+  }
+});
+
+test("close-action channels reject a primary port this shell does not own", async () => {
+  for (const [channel, args] of CLOSE_ACTION_CHANNELS) {
+    for (const primaryPortOwner of ["foreign", "none", "unknown"]) {
+      const h = harness({ primaryPortOwner });
+      h.registrar.registerShell();
+      await assert.rejects(
+        () => h.handlers.get(channel)(wslEvent(), ...args),
+        { message: `${channel} is restricted to the local dashboard` },
+      );
+      assertCloseActionRefused(h, channel);
+    }
+  }
+});
+
+test("close-action channels read and write through the window facade for the local dashboard", async () => {
+  for (const primaryPortOwner of ["kirocrew", "service"]) {
+    const h = harness({ primaryPortOwner });
+    h.registrar.registerShell();
+    assert.equal(await h.handlers.get("close-action:get")(wslEvent()), "background");
+    assert.equal(await h.handlers.get("close-action:set")(wslEvent(), "quit"), "quit");
+    assert.deepEqual(lastCall(h.windowCalls, "closeAction.set"), ["closeAction.set", "quit"]);
+    // The registrar itself never writes the store: the facade is the one writer,
+    // so the tray checkmark is refreshed with every change.
+    assert.equal(h.store.writes.some(([key]) => key === "closeAction"), false);
+  }
+});
+
+test("close-action:set applies writes in the order they were sent, even when gates settle out of order", async () => {
+  const h = harness();
+  h.registrar.registerShell();
+  // The first write's ownership probe is slow; the second's answers at once.
+  let releaseFirst;
+  const slow = new Promise((resolve) => { releaseFirst = () => resolve("kirocrew"); });
+  const probes = [slow, Promise.resolve("kirocrew")];
+  h.gateway.probePrimaryPortOwner = () => probes.shift();
+
+  const first = h.handlers.get("close-action:set")(wslEvent(), "quit");
+  const second = h.handlers.get("close-action:set")(wslEvent(), "background");
+  // Let every already-runnable continuation drain before the slow gate opens:
+  // an unserialized setter would write "background" here, ahead of "quit".
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.windowCalls.some(([name]) => name === "closeAction.set"), false);
+  releaseFirst();
+  assert.deepEqual(await Promise.all([first, second]), ["quit", "background"]);
+  const writes = h.windowCalls.filter(([name]) => name === "closeAction.set").map(([, v]) => v);
+  assert.deepEqual(writes, ["quit", "background"], "the later toggle must be the one that sticks");
+});
+
+test("a refused close-action:set does not block the writes queued behind it", async () => {
+  const h = harness();
+  h.registrar.registerShell();
+  const probes = [Promise.resolve("foreign"), Promise.resolve("kirocrew")];
+  h.gateway.probePrimaryPortOwner = () => probes.shift();
+  await assert.rejects(() => h.handlers.get("close-action:set")(wslEvent(), "quit"));
+  assert.equal(await h.handlers.get("close-action:set")(wslEvent(), "quit"), "quit");
 });

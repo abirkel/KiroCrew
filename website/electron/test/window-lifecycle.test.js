@@ -1657,3 +1657,125 @@ describe("gateway port prompt", () => {
     }
   });
 });
+
+// ── Close button: background vs quit (#12204) ───────────────────────────────
+
+describe("main window close action", () => {
+  function closeHandlerBody() {
+    const start = SOURCE.indexOf('mainWindow.on("close", createCloseHandler({');
+    assert.notEqual(start, -1, "main window close handler must be built by createCloseHandler");
+    return SOURCE.slice(start, SOURCE.indexOf("\n    }));\n", start));
+  }
+
+  it("wires the close listener to the store, the tray hide, requestQuit and persist", () => {
+    // The sequence itself is exercised behaviourally in close-action.test.js;
+    // this pins that the main window feeds it the real effects.
+    const body = closeHandlerBody();
+    assert.match(body, /getAction: \(\) => getCloseAction\(store\)/);
+    assert.match(body, /cancelPendingTrayHide\(mainWindow\)/);
+    assert.match(body, /^\s*requestQuit,$/m);
+    assert.match(body, /hideToTray\(mainWindow, \{/);
+    assert.match(body, /persist\(\);/);
+  });
+
+  function trayHarness({ stored = {} } = {}) {
+    const data = { ...stored };
+    const store = {
+      path: "/virtual/config.json",
+      get: (key) => data[key],
+      set: (key, value) => { data[key] = value; },
+    };
+    const menus = [];
+    let trayInstance = null;
+    class Tray {
+      constructor(icon) {
+        this.icon = icon;
+        this.handlers = new Map();
+        trayInstance = this;
+      }
+      setToolTip(text) { this.tooltip = text; }
+      setContextMenu(menu) { this.menu = menu; }
+      on(event, handler) { this.handlers.set(event, handler); }
+      isDestroyed() { return false; }
+    }
+    const lifecycle = createWindowLifecycle(validOptions({
+      electron: {
+        app: { name: "Kiro Crew", getVersion: () => "0.8.0", getPath: () => "/virtual/logs" },
+        Tray,
+        Menu: { buildFromTemplate: (template) => { menus.push(template); return { template }; } },
+        nativeImage: {
+          createFromPath: () => ({ resize: () => ({ fake: "icon" }), setTemplateImage() {} }),
+        },
+        shell: {},
+      },
+      store,
+      platform: "linux",
+      env: {},
+    }));
+    lifecycle.createTray();
+    const closeItem = () => menus[menus.length - 1].find((item) => item.type === "checkbox");
+    return { lifecycle, data, menus, closeItem, tray: () => trayInstance };
+  }
+
+  it("mirrors the setting as a checked tray item by default", () => {
+    const h = trayHarness();
+    const item = h.closeItem();
+    assert.ok(item, "tray menu must carry the close-action checkbox");
+    assert.equal(item.checked, true, "an untouched install keeps running when closed");
+    const labels = h.menus[0].map((entry) => entry.label).filter(Boolean);
+    assert.ok(labels.indexOf(item.label) < labels.indexOf("Quit"), "the toggle sits above Quit");
+  });
+
+  // Tray clicks write through the shared queue, so they settle a tick later.
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  it("writes the choice from a tray click and rebuilds the menu from the store", async () => {
+    const h = trayHarness();
+    // Electron flips `checked` before calling click.
+    h.closeItem().click({ checked: false });
+    await settle();
+    assert.equal(h.data.closeAction, "quit");
+    assert.equal(h.closeItem().checked, false, "the rebuilt menu shows the stored value");
+    h.closeItem().click({ checked: true });
+    await settle();
+    assert.equal(h.data.closeAction, "background");
+    assert.equal(h.closeItem().checked, true);
+  });
+
+  it("a tray click made while a Settings write waits on its gate is the one that sticks", async () => {
+    const h = trayHarness();
+    let openGate;
+    const gate = new Promise((resolve) => { openGate = resolve; });
+    // What close-action:set does: the gate and the write in one queued task.
+    const settingsWrite = h.lifecycle.closeAction.enqueue(async () => {
+      await gate;
+      return h.lifecycle.closeAction.set("quit");
+    });
+    // The user then picks the opposite value from the tray.
+    h.closeItem().click({ checked: true });
+    await settle();
+    assert.equal(h.data.closeAction, undefined, "the tray write waits behind the pending Settings write");
+    openGate();
+    assert.equal(await settingsWrite, "quit");
+    await settle();
+    assert.equal(h.data.closeAction, "background", "the later tray action must win");
+    assert.equal(h.closeItem().checked, true);
+  });
+
+  it("a Settings write through the facade refreshes the tray checkmark", () => {
+    const h = trayHarness({ stored: { closeAction: "quit" } });
+    assert.equal(h.closeItem().checked, false);
+    assert.equal(h.lifecycle.closeAction.get(), "quit");
+    assert.equal(h.lifecycle.closeAction.set("background"), "background");
+    assert.equal(h.closeItem().checked, true, "a write from Settings must not leave a stale checkmark");
+    assert.equal(h.lifecycle.closeAction.set("nonsense"), "background");
+  });
+
+  it("the facade is safe to call before the tray exists", () => {
+    const lifecycle = createWindowLifecycle(validOptions({
+      store: { get: () => undefined, set() {} },
+    }));
+    assert.equal(lifecycle.closeAction.get(), "background");
+    assert.equal(lifecycle.closeAction.set("quit"), "quit");
+  });
+});

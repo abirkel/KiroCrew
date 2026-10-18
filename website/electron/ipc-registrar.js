@@ -326,6 +326,26 @@ function createIpcRegistrar({
       return detectWsl();
     });
 
+    // What the main window's close button does (Settings > Display > Desktop
+    // app). Gated like the channels above even though the value is harmless to
+    // read: the SETTER changes how this machine's app behaves, and a connection
+    // window pointed at a REMOTE gateway shares this preload. Remote pages get a
+    // rejection, so the dashboard hides the row there and the tray menu's
+    // checkbox stays the way to change it. Both resolve with the stored value.
+    ipcMain.handle("close-action:get", async (event) => {
+      await assertLocalDashboard(event, "close-action:get");
+      return windows.closeAction.get();
+    });
+    // Writes run in the window facade's one ordered queue, shared with the tray
+    // checkbox. Each one awaits its own gate (a port-owner probe) INSIDE its
+    // queued task, so neither a quick second toggle nor a tray click made while
+    // the probe is pending can be overwritten by this older request.
+    ipcMain.handle("close-action:set", (event, value) =>
+      windows.closeAction.enqueue(async () => {
+        await assertLocalDashboard(event, "close-action:set");
+        return windows.closeAction.set(value);
+      }));
+
     // Open a file the chat referenced in the user's own editor, by handing its
     // path to the OS default handler on the machine in front of them.
     //

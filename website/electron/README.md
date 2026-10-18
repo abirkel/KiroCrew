@@ -284,6 +284,7 @@ each launch to get a fresh JWT — no manual paste required.
 | Connection menu / macOS title-bar right-click | Set Remote Host… | Configure hostname for the **focused window's** port |
 | Connection menu / macOS title-bar right-click | Refresh Token (⌘⇧T) | Fetch a fresh token for the **focused window** |
 | Connection menu / tray | Open Config File | Open `config.json` in default editor |
+| Tray | Keep Running When Window Is Closed | Checked (the default): the close button hides the window. Unchecked: the close button quits the app. Mirrors Settings → Display → Desktop app |
 
 ### Window naming
 
@@ -333,7 +334,15 @@ Open via **Connection → Open Config File** or the tray menu.
   dashboard window and creates a blank session. It shares the running local
   gateway and authentication origin, but does not copy the current session,
   project, draft, or context.
-- Closing the window hides to tray — right-click the tray icon or Cmd+Q to quit
+- Closing the window hides it and keeps the app running, reachable from the tray
+  icon, the Dock on macOS, or a relaunch. Right-click the tray icon and choose
+  Quit, or press Cmd+Q / Ctrl+Q, to quit. To make the close button quit instead,
+  turn off **Keep running when the window is closed** in Settings → Display →
+  Desktop app, or untick **Keep Running When Window Is Closed** in the tray menu.
+  The choice is the `closeAction` key (`"background"` or `"quit"`) in this
+  app's config file, read on every close (`close-action.js`). Quitting this way
+  takes the same path as the Quit menu item: a gateway the app started stops,
+  and a gateway it connected to keeps running.
 - **GPU rendering.** Hardware acceleration is on by default.
   `KIROCREW_DISABLE_GPU=1` or `--disable-gpu` turns it off for a launch
   (`disable-gpu.js`). On Windows, if the GPU process dies before the dashboard
