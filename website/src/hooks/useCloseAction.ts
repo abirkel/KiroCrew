@@ -25,6 +25,9 @@ export function useCloseAction() {
   // install does.
   const [closeAction, setCloseActionState] = useState<CloseAction>('background')
   const [pending, setPending] = useState(false)
+  // A write the main process refused or failed to store. Shown under the
+  // switch until the next attempt, so a toggle that did nothing says so.
+  const [failed, setFailed] = useState(false)
   const pendingRef = useRef(false)
   const alive = useRef(true)
 
@@ -50,15 +53,23 @@ export function useCloseAction() {
     if (!api || pendingRef.current) return
     pendingRef.current = true
     setPending(true)
+    setFailed(false)
     void api.set(next).then(v => {
       if (alive.current) setCloseActionState(canonical(v))
     }).catch(() => {
       // Nothing was stored, so the switch keeps the value it already shows.
+      if (alive.current) setFailed(true)
     }).finally(() => {
       pendingRef.current = false
       if (alive.current) setPending(false)
     })
   }, [])
 
-  return { closeAction, closeActionSupported: supported, closeActionPending: pending, setCloseAction }
+  return {
+    closeAction,
+    closeActionSupported: supported,
+    closeActionPending: pending,
+    closeActionFailed: failed,
+    setCloseAction,
+  }
 }

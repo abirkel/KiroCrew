@@ -110,7 +110,7 @@ export function DisplayPanel({ basePath }: { basePath?: string } = {}) {
   const { uiMode, setUIMode } = useUIMode()
   const editor = useThemeEditor()
   const { liquidGlass, setLiquidGlass } = useLiquidGlass()
-  const { closeAction, closeActionSupported, closeActionPending, setCloseAction } = useCloseAction()
+  const { closeAction, closeActionSupported, closeActionPending, closeActionFailed, setCloseAction } = useCloseAction()
   const { botName, directLocal } = useBranding()
   const termFont = useTerminalFont()
   // Probed families become picker rows previewed in their own family, so the
@@ -590,12 +590,22 @@ export function DisplayPanel({ basePath }: { basePath?: string } = {}) {
         <SettingsSection title={i18nT('pages.settings.displayPanel.desktop_app')}>
           <SettingsCard>
             <SettingsToggle
+              settingId="display.leave-app-running-in-the-background-when-the-window-is-closed"
               label={i18nT('pages.settings.displayPanel.keep_running_when_window_closed')}
               hint={i18nT('pages.settings.displayPanel.keep_running_when_window_closed_desc')}
               checked={closeAction === 'background'}
               disabled={closeActionPending}
               onChange={on => setCloseAction(on ? 'background' : 'quit')}
             />
+            {/* A refused or failed write stored nothing; the switch already
+                shows the unchanged value, so only the reason is added. No
+                hand-off: toggling again is the retry. */}
+            {closeActionFailed && (
+              <ErrorNotice
+                variant="inline"
+                message={i18nT('pages.settings.displayPanel.keep_running_when_window_closed_save_failed')}
+              />
+            )}
           </SettingsCard>
         </SettingsSection>
       )}

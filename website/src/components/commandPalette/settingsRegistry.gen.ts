@@ -2057,7 +2057,8 @@ export const SETTINGS_REGISTRY: SettingEntry[] =
     "occurrence": 1,
     "params": {
       "sub": "view"
-    }
+    },
+    "settingId": "display.leave-app-running-in-the-background-when-the-window-is-closed"
   },
   {
     "id": "display.mode",

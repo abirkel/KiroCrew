@@ -334,7 +334,6 @@ function harness({
         windowCalls.push(["closeAction.set", ...args]);
         return args[0] === "quit" ? "quit" : "background";
       },
-      // The real facade's ordered queue.
     },
   };
   for (const name of [

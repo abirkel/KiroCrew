@@ -104,12 +104,20 @@ describe('useCloseAction', () => {
     expect(result.current.closeAction).toBe('background')
   })
 
-  it('a refused write changes nothing and re-enables the switch', async () => {
+  it('a refused write changes nothing, re-enables the switch and reports the failure', async () => {
     const main = fakeMain()
     const { result } = await ready()
+    expect(result.current.closeActionFailed).toBe(false)
     act(() => { result.current.setCloseAction('quit') })
     await act(async () => { main.writes[0].refuse() })
     expect(result.current.closeAction).toBe('background')
     expect(result.current.closeActionPending).toBe(false)
+    expect(result.current.closeActionFailed).toBe(true)
+    // The next attempt clears the notice, and a success keeps it clear.
+    act(() => { result.current.setCloseAction('quit') })
+    expect(result.current.closeActionFailed).toBe(false)
+    await act(async () => { main.writes[1].store() })
+    expect(result.current.closeAction).toBe('quit')
+    expect(result.current.closeActionFailed).toBe(false)
   })
 })
