@@ -380,6 +380,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # TEST-ONLY (throwaway branch, never part of the PR): ship the unpacked app
+      # folder plus a launcher as a zip for a manual run beside the installed app.
+      - name: Zip unpacked app for manual testing
+        shell: pwsh
+        run: |
+          $dir = "website/electron/dist/win-unpacked"
+          Get-ChildItem $dir -Filter *.exe | ForEach-Object { Write-Host "exe: $($_.Name)" }
+          $cmd = (Get-Content -Raw temp-win-test/launch-test.cmd) -replace "`r?`n", "`r`n"
+          [System.IO.File]::WriteAllText("$PWD/$dir/launch-test.cmd", $cmd)
+          Compress-Archive -Path "$dir/*" -DestinationPath kirocrew-win-unpacked-x64.zip -CompressionLevel Fastest
+          (Get-Item kirocrew-win-unpacked-x64.zip).Length / 1MB | ForEach-Object { Write-Host ("zip MB: {0:N0}" -f $_) }
+
+      - name: Upload unpacked app (test only)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: kirocrew-win-unpacked-x64
+          path: kirocrew-win-unpacked-x64.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
       # Reached only when every step above, the upload included, succeeded: a
       # failed step ends the job before this one, so the output stays empty
       # and `smoke-install-windows` sees no artifact to consume.
