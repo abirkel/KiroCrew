@@ -660,15 +660,18 @@ describe('KiroCrewCfgTab — subagent settings', () => {
   it('stakes a leave guard while a subagent draft is unsaved', async () => {
     await renderRun()
     // Clean: the guard lets every navigation through and stakes nothing.
-    let [guard, atStake] = leaveGuard.mock.calls.at(-1) as [() => boolean, boolean]
+    let [guard, atStake] = leaveGuard.mock.calls.at(-1) as [() => boolean | Promise<boolean>, boolean]
     expect(atStake).toBe(false)
-    await expect(guard()).resolves.toBe(true)
+    // A plain `true`, not a promise: a clean tab is left in the same task.
+    expect(guard()).toBe(true)
 
     fireEvent.change(num('Max Turns per Subagent'), { target: { value: '120' } })
-    ;[guard, atStake] = leaveGuard.mock.calls.at(-1) as [() => boolean, boolean]
+    ;[guard, atStake] = leaveGuard.mock.calls.at(-1) as [() => boolean | Promise<boolean>, boolean]
     expect(atStake).toBe(true)
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
-    await expect(guard()).resolves.toBe(false)
+    const answer = guard()
+    expect(answer).toBeInstanceOf(Promise)
+    expect(await answer).toBe(false)
     expect(confirm).toHaveBeenCalledTimes(1)
     confirm.mockRestore()
   })
